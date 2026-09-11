@@ -19,7 +19,10 @@ says it's actually needed).
   - `CinderChart` owns the canvas, event wiring (pan/zoom/price-axis drag/hover), on-demand
     data loading, and the render loop. None of it knows what's actually being plotted — see
     "Series types" below.
-  - `Viewport` is the pure pan/zoom/price-range state — no DOM, fully unit tested.
+  - `Viewport` is the pure pan/zoom/value-range state — no DOM, fully unit tested. "Value"
+    is deliberately generic (`valueRangeOverride`, `scaleValueRange`, ...): it's whatever
+    the active series's y-domain is, price for candlesticks and no different in kind for
+    a future series with its own value domain.
   - `setDataLoader()` lets the chart pull more history on demand as the user pans toward
     either edge of what's loaded, without the library ever making a network call itself —
     see `src/dataSource.ts`.
@@ -52,6 +55,14 @@ event handling, data loading, and WASM scale dispatch are all untouched, and exi
 series's `defaultStyle` declares (candlestick's is `{ upColor, downColor }`), merged over
 that default rather than hardcoded into the chart itself.
 
+`options.type` is a plain string the registry resolves at runtime, so `new CinderChart(canvas,
+{ type: 'candlestick', style: {...} })` type-checks even if `style` has nothing to do with
+`CandlestickStyle` — nothing ties a runtime string to a specific `TPoint`/`TStyle` pair at the
+type level. `createCandlestickChart()` (in `src/index.ts`) is the fix for the one built-in
+type: a thin wrapper that pins both generics so its `style` is fully checked. A new series
+should export an equivalent `create<Name>Chart` next to it rather than widening
+`CinderChartOptions` itself, so each series's style shape stays independent of every other's.
+
 ### Plugins (markers, annotations, drawing tools)
 
 A second, narrower extension point covers anything drawn *on top of* a chart without being
@@ -61,6 +72,15 @@ calls its `draw()` once per frame, after the series and axes, with a `PluginRend
 fresh from that frame's own pan/zoom state (`xForIndex`, `yForValue`, chart geometry). No
 concrete plugin ships yet — the hook exists so a marker implementation can be added later as
 its own file, without ever touching `CinderChart` or `ChartRenderer`.
+
+Each plugin's `draw()` runs wrapped in its own `ctx.save()`/`ctx.restore()` and its own
+`try`/`catch`: a plugin that leaves canvas state dirty (`strokeStyle`, line dash, ...) can't
+bleed it into the next plugin or into next frame's axes, and a plugin that throws gets logged
+via `console.error` and skipped rather than blanking the rest of the chart. `yForValue` (and,
+by contract, `xForIndex`) must only be called synchronously inside that one `draw()` call —
+above the `WASM_SCALE_THRESHOLD` point count, `yForValue` closes over a WASM-backed scale
+that's freed the moment `draw()` returns, and calling it later throws rather than touching
+freed memory.
 
 ```bash
 # TypeScript

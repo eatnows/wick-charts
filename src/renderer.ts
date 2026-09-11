@@ -96,7 +96,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     // Manual mode (user has dragged/scaled the price axis) wins once set;
     // otherwise fit to whatever points are currently visible.
     const { min: valueMin, max: valueMax } =
-      viewport.priceRangeOverride ?? seriesDefinition.getValueRange(visible, viewport.priceScaleFactor);
+      viewport.valueRangeOverride ?? seriesDefinition.getValueRange(visible, viewport.valueScaleFactor);
 
     // JS below a few hundred points, WASM above — see hybridScale.ts.
     // Whichever it picks, `dispose()` must run once we're done reading
@@ -108,6 +108,13 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       0,
       visible.length,
     );
+
+    // Flipped in `finally`, right before `disposeYScale()` frees the WASM
+    // scale's backing memory (a no-op on the JS path). Guards `yForValue`
+    // below so a plugin that stashes it and calls it later gets a clear
+    // thrown error instead of touching freed WASM memory — see the
+    // interface-level warning on `PluginRenderApi`.
+    let frameEnded = false;
 
     try {
       const slotWidth = chartWidth / viewport.visibleCount;
@@ -135,13 +142,36 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           chartWidth,
           chartHeight,
           xForIndex,
-          yForValue: (value) => yScale.map(value),
+          yForValue: (value) => {
+            if (frameEnded) {
+              throw new Error(
+                'cinderchart: PluginRenderApi.yForValue called after its frame ended — ' +
+                  'only call it synchronously inside ChartPlugin.draw()',
+              );
+            }
+            return yScale.map(value);
+          },
           visibleStartIndex: startIdx,
           visibleEndIndex: endIdx,
         };
-        for (const plugin of plugins) plugin.draw(api);
+        for (const plugin of plugins) {
+          // save/restore isolates each plugin's canvas state (strokeStyle,
+          // lineDash, ...) from the next one — a plugin that forgets to
+          // clean up after itself can't bleed style into whatever draws
+          // after it. try/catch isolates failures the same way: one
+          // plugin throwing shouldn't blank out the rest of the chart.
+          ctx.save();
+          try {
+            plugin.draw(api);
+          } catch (error) {
+            console.error('cinderchart: a plugin threw during draw()', error);
+          } finally {
+            ctx.restore();
+          }
+        }
       }
     } finally {
+      frameEnded = true;
       disposeYScale();
     }
   }

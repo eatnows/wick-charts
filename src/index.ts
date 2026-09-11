@@ -2,49 +2,50 @@ import type { DataLoader } from './dataSource.js';
 import { mergeSeriesPoints } from './mergeSeries.js';
 import { ChartRenderer } from './renderer.js';
 import { getSeries } from './series/registry.js';
-// Registers the 'candlestick' type as a side effect — see
-// src/series/candlestick.ts and src/series/registry.ts. A new series type
-// gets the same treatment: implement SeriesDefinition, import it here (or
-// have the consuming app import it directly before constructing a chart of
-// that type), and `type: '<its key>'` becomes usable with no other change
-// to this file.
-import './series/candlestick.js';
 import { toUnixSeconds } from './time.js';
 import { Viewport } from './viewport.js';
 import { loadWasm } from './wasm.js';
 import { importRealWasm } from './wasmImporter.js';
 import type { ChartPlugin } from './plugins/types.js';
+import type { CandlestickStyle } from './series/candlestick.js';
 import type { SeriesDefinition } from './series/types.js';
-import type { Candle, CinderChartOptions, SeriesPoint } from './types.js';
+import type { Candle, CinderChartOptions, SeriesPoint, ValueRange } from './types.js';
 
-export type { BusinessDay, Candle, CinderChartOptions, CinderTime, SeriesPoint, UnixMillis } from './types.js';
+export type { BusinessDay, Candle, CinderChartOptions, CinderTime, SeriesPoint, UnixMillis, ValueRange } from './types.js';
 export type { DataLoader, DataRequest } from './dataSource.js';
 export type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
 export type { Scale } from './hybridScale.js';
 export { mergeSeriesPoints } from './mergeSeries.js';
 export { registerSeries, getSeries } from './series/registry.js';
-export type { SeriesDefinition, SeriesDrawContext, ValueRange } from './series/types.js';
+export type { SeriesDefinition, SeriesDrawContext } from './series/types.js';
 export type { CandlestickStyle } from './series/candlestick.js';
+// Also registers the 'candlestick' type as a module-load side effect — see
+// src/series/candlestick.ts and src/series/registry.ts. A new series type
+// gets the same treatment: implement SeriesDefinition, export it here (or
+// have the consuming app import it directly before constructing a chart of
+// that type), and `type: '<its key>'` becomes usable with no other change
+// to this file.
+export { candlestickSeries } from './series/candlestick.js';
 export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
 export { getCachedWasmModule, loadWasm } from './wasm.js';
 
-type DragMode = 'pan' | 'price-scale' | 'scrub' | null;
+type DragMode = 'pan' | 'value-scale' | 'scrub' | null;
 type LoadDirection = 'before' | 'after';
 
-/** How many candles are visible by default when `setData` is called without
+/** How many points are visible by default when `setData` is called without
  * an explicit window — opens on a recent slice rather than the entire
  * series zoomed all the way out, which would leave no room to pan. */
-const DEFAULT_VISIBLE_CANDLES = 120;
+const DEFAULT_VISIBLE_POINTS = 120;
 
-/** How close (in candles) the visible window has to get to either edge of
+/** How close (in points) the visible window has to get to either edge of
  * the loaded data before `setDataLoader`'s loader is asked for more. */
 const DEFAULT_LOAD_THRESHOLD = 20;
 
 /** How long a single finger has to stay down before a still-in-progress
  * 'pan' touch switches to 'scrub' mode (touch has no hover, so this is its
- * substitute — hold to inspect a candle instead of panning past it). */
+ * substitute — hold to inspect a point instead of panning past it). */
 const LONG_PRESS_MS = 350;
 
 /** A finger moving more than this many CSS px from where it landed counts
@@ -79,7 +80,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   /** Distance (CSS px) between two touches on the previous touchmove —
    * `null` whenever fewer than two fingers are down. Compared frame to
    * frame (not against a fixed start value) so it composes naturally with
-   * the same incremental-delta style `applyPanDelta`/`applyPriceScaleDelta`
+   * the same incremental-delta style `applyPanDelta`/`applyValueScaleDelta`
    * already use. */
   private pinchLastDistance: number | null = null;
   /** Where the current single-finger touch landed — compared against the
@@ -117,7 +118,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   setData(points: TPoint[]): this {
     this.sorted = [...points].sort((a, b) => toUnixSeconds(a.time) - toUnixSeconds(b.time));
     this.times = this.sorted.map((p) => toUnixSeconds(p.time));
-    this.viewport = new Viewport(this.sorted.length, DEFAULT_VISIBLE_CANDLES);
+    this.viewport = new Viewport(this.sorted.length, DEFAULT_VISIBLE_POINTS);
     this.hoverIndex = null;
     this.exhausted = { before: false, after: false };
     return this;
@@ -179,13 +180,13 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     });
   }
 
-  /** How many candles are currently loaded (not just visible) — grows as
+  /** How many points are currently loaded (not just visible) — grows as
    * `setDataLoader`'s loader supplies more history. */
-  getCandleCount(): number {
+  getPointCount(): number {
     return this.sorted.length;
   }
 
-  /** The currently visible window, in candle indices into the full loaded
+  /** The currently visible window, in point indices into the full loaded
    * series. Useful for building UI around the chart (a minimap, a "jump to
    * latest" button) without reaching into private state. */
   getVisibleRange(): { startIndex: number; endIndex: number; visibleCount: number } {
@@ -196,13 +197,13 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     };
   }
 
-  /** The price axis's manual range once the user has dragged or scaled it
+  /** The value axis's manual range once the user has dragged or scaled it
    * — `null` if the axis is still auto-fitting to whatever's visible
    * (the default until the user first touches it vertically). */
-  getPriceRangeOverride(): { min: number; max: number } | null {
+  getValueRangeOverride(): ValueRange | null {
     // A copy, not the live internal object — a caller mutating what they
     // got back should never be able to corrupt the viewport's own state.
-    const range = this.viewport.priceRangeOverride;
+    const range = this.viewport.valueRangeOverride;
     return range ? { ...range } : null;
   }
 
@@ -250,14 +251,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
 
   private onMouseDown = (e: MouseEvent): void => {
     const { x } = this.cursorPosition(e);
-    this.dragMode = x >= this.renderer.chartWidth ? 'price-scale' : 'pan';
+    this.dragMode = x >= this.renderer.chartWidth ? 'value-scale' : 'pan';
     this.lastX = e.clientX;
     this.lastY = e.clientY;
     // Any drag that can touch the price axis (main-pane vertical pan or the
     // price-axis-strip scale drag) switches the axis to manual mode first,
     // seeded from whatever is on screen right now — otherwise there's no
     // "current range" to shift or scale relative to.
-    this.ensurePriceRangeOverride();
+    this.ensureValueRangeOverride();
   };
 
   private onMouseMove = (e: MouseEvent): void => {
@@ -265,8 +266,8 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
       this.applyPanDelta(e.clientX, e.clientY);
       return;
     }
-    if (this.dragMode === 'price-scale') {
-      this.applyPriceScaleDelta(e.clientY);
+    if (this.dragMode === 'value-scale') {
+      this.applyValueScaleDelta(e.clientY);
       return;
     }
     this.updateHover(e);
@@ -285,8 +286,8 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   };
 
   /** Shared by both mouse drag and single-finger touch drag: shifts the
-   * visible time window and, once the price axis is in manual mode, the
-   * visible price window too — see the "pan" branch `onMouseMove` used to
+   * visible time window and, once the value axis is in manual mode, the
+   * visible value window too — see the "pan" branch `onMouseMove` used to
    * inline before mouse and touch needed the exact same math. */
   private applyPanDelta(clientX: number, clientY: number): void {
     // Coordinates are in CSS pixels; chartWidth/chartHeight are in canvas
@@ -308,14 +309,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     }
 
     const chartHeight = this.renderer.chartHeight;
-    if (chartHeight > 0 && this.viewport.priceRangeOverride) {
+    if (chartHeight > 0 && this.viewport.valueRangeOverride) {
       const deltaYDevice = deltaYCss * this.devicePixelScaleY();
-      const { min, max } = this.viewport.priceRangeOverride;
-      const pricePerPixel = (max - min) / chartHeight;
-      // Dragging down moves the visible price window down (content
+      const { min, max } = this.viewport.valueRangeOverride;
+      const valuePerPixel = (max - min) / chartHeight;
+      // Dragging down moves the visible value window down (content
       // follows the cursor), matching the horizontal drag's "grab and
       // slide" feel — see the pan call above for the mirrored X case.
-      this.viewport.panPriceRange(deltaYDevice * pricePerPixel);
+      this.viewport.panValueRange(deltaYDevice * valuePerPixel);
     }
 
     this.scheduleRender();
@@ -323,12 +324,12 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
 
   /** Shared by both mouse drag and single-finger touch drag on the
    * price-axis strip. */
-  private applyPriceScaleDelta(clientY: number): void {
+  private applyValueScaleDelta(clientY: number): void {
     const deltaY = clientY - this.lastY;
     this.lastY = clientY;
-    // Dragging the price axis down widens the visible price range
-    // (candles shrink); dragging up narrows it (candles grow).
-    this.viewport.scalePriceRange(Math.pow(1.006, deltaY));
+    // Dragging the price axis down widens the visible value range
+    // (the series looks shorter); dragging up narrows it (looks taller).
+    this.viewport.scaleValueRange(Math.pow(1.006, deltaY));
     this.scheduleRender();
   }
 
@@ -355,17 +356,17 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     if (e.touches.length === 1) {
       const touch = e.touches[0]!;
       const { x } = this.cursorPosition(touch);
-      this.dragMode = x >= this.renderer.chartWidth ? 'price-scale' : 'pan';
+      this.dragMode = x >= this.renderer.chartWidth ? 'value-scale' : 'pan';
       this.lastX = touch.clientX;
       this.lastY = touch.clientY;
       this.touchStartX = touch.clientX;
       this.touchStartY = touch.clientY;
-      this.ensurePriceRangeOverride();
+      this.ensureValueRangeOverride();
 
       // Touch has no hover, so holding a finger still is its substitute:
       // if it's still a 'pan' candidate (not already moved into a real
       // drag, not on the price-axis strip) when this fires, switch to
-      // inspecting the candle under the finger instead of panning.
+      // inspecting the point under the finger instead of panning.
       if (this.dragMode === 'pan') {
         this.clearLongPressTimer();
         this.longPressTimer = setTimeout(() => {
@@ -420,8 +421,8 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
       return;
     }
 
-    if (this.dragMode === 'price-scale') {
-      this.applyPriceScaleDelta(touch.clientY);
+    if (this.dragMode === 'value-scale') {
+      this.applyValueScaleDelta(touch.clientY);
       return;
     }
 
@@ -564,14 +565,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   /** Switches the price/value axis to manual mode if it hasn't been
    * already, seeding it from the current auto-fit range so the first pixel
    * of a drag doesn't jump. No-op on subsequent calls (already manual). */
-  private ensurePriceRangeOverride(): void {
-    if (this.viewport.priceRangeOverride || this.sorted.length === 0) return;
+  private ensureValueRangeOverride(): void {
+    if (this.viewport.valueRangeOverride || this.sorted.length === 0) return;
     const startIdx = Math.max(0, Math.floor(this.viewport.startIndex));
     const endIdx = Math.min(this.sorted.length, Math.ceil(this.viewport.endIndex));
     const visible = this.sorted.slice(startIdx, endIdx);
     if (visible.length === 0) return;
-    this.viewport.setPriceRangeOverride(
-      this.seriesDefinition.getValueRange(visible, this.viewport.priceScaleFactor),
+    this.viewport.setValueRangeOverride(
+      this.seriesDefinition.getValueRange(visible, this.viewport.valueScaleFactor),
     );
   }
 
@@ -601,4 +602,24 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     const rect = this.canvas.getBoundingClientRect();
     return rect.height === 0 ? 1 : this.canvas.height / rect.height;
   }
+}
+
+/**
+ * `new CinderChart(canvas, { type: 'candlestick', style: {...} })` type-checks
+ * even if `style` has nothing to do with `CandlestickStyle` — `type` is a
+ * runtime string the registry resolves, so nothing ties it to a specific
+ * `TStyle` at the type level (see `src/series/registry.ts`). This factory
+ * pins both `TPoint` (`Candle`) and `TStyle` (`CandlestickStyle`) for the
+ * one series built into the library, so `style` is fully checked here.
+ *
+ * A new series type gets the same treatment: export an equivalent
+ * `create<Name>Chart` next to it (in your own module, or a file like this
+ * one) rather than widening `CinderChartOptions` itself — that keeps every
+ * series's style shape independent of every other's.
+ */
+export function createCandlestickChart(
+  canvas: HTMLCanvasElement,
+  options?: Omit<CinderChartOptions, 'type' | 'style'> & { style?: Partial<CandlestickStyle> },
+): CinderChart<Candle> {
+  return new CinderChart<Candle>(canvas, { ...options, type: 'candlestick' });
 }

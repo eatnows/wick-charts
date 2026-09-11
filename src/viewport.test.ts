@@ -43,33 +43,33 @@ describe('Viewport', () => {
     expect(vp.visibleCount).toBeGreaterThanOrEqual(5);
   });
 
-  it('scalePrice clamps to a bounded range', () => {
+  it('scaleValue clamps to a bounded range', () => {
     const vp = new Viewport(100, 20);
-    for (let i = 0; i < 50; i++) vp.scalePrice(2); // would blow up without clamping
-    expect(vp.priceScaleFactor).toBeLessThanOrEqual(8);
+    for (let i = 0; i < 50; i++) vp.scaleValue(2); // would blow up without clamping
+    expect(vp.valueScaleFactor).toBeLessThanOrEqual(8);
 
-    for (let i = 0; i < 50; i++) vp.scalePrice(0.5);
-    expect(vp.priceScaleFactor).toBeGreaterThanOrEqual(0.5);
+    for (let i = 0; i < 50; i++) vp.scaleValue(0.5);
+    expect(vp.valueScaleFactor).toBeGreaterThanOrEqual(0.5);
   });
 
-  it('panPriceRange and scalePriceRange are no-ops until an override is set', () => {
+  it('panValueRange and scaleValueRange are no-ops until an override is set', () => {
     const vp = new Viewport(100, 20);
-    vp.panPriceRange(10);
-    vp.scalePriceRange(2);
-    expect(vp.priceRangeOverride).toBeNull();
+    vp.panValueRange(10);
+    vp.scaleValueRange(2);
+    expect(vp.valueRangeOverride).toBeNull();
   });
 
-  it('panPriceRange shifts both bounds by the same absolute amount', () => {
+  it('panValueRange shifts both bounds by the same absolute amount', () => {
     const vp = new Viewport(100, 20);
-    vp.setPriceRangeOverride({ min: 100, max: 200 });
-    vp.panPriceRange(15);
-    expect(vp.priceRangeOverride).toEqual({ min: 115, max: 215 });
+    vp.setValueRangeOverride({ min: 100, max: 200 });
+    vp.panValueRange(15);
+    expect(vp.valueRangeOverride).toEqual({ min: 115, max: 215 });
   });
 
-  it('scalePriceRange widens/narrows around the override range center', () => {
+  it('scaleValueRange widens/narrows around the override range center', () => {
     const vp = new Viewport(100, 20);
-    vp.setPriceRangeOverride({ min: 100, max: 200 }); // center 150, half-span 50
-    vp.scalePriceRange(2);
-    expect(vp.priceRangeOverride).toEqual({ min: 50, max: 250 });
+    vp.setValueRangeOverride({ min: 100, max: 200 }); // center 150, half-span 50
+    vp.scaleValueRange(2);
+    expect(vp.valueRangeOverride).toEqual({ min: 50, max: 250 });
   });
 });

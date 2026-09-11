@@ -3,7 +3,7 @@ const SECONDS_PER_90_DAYS = 90 * SECONDS_PER_DAY;
 
 /**
  * Picks a label granularity from how wide a time range the axis is
- * covering — not from the interval between individual candles, since a
+ * covering — not from the interval between individual points, since a
  * daily chart over a week and an hourly chart over a week should both
  * show dates, not times.
  */
@@ -16,7 +16,7 @@ export function formatAxisLabel(unixSeconds: number, spanSeconds: number): strin
 
 /**
  * Evenly-spaced indices into a `length`-long series, capped at `maxTicks`.
- * Used to decide which candles get an axis label — labeling every candle
+ * Used to decide which points get an axis label — labeling every point
  * would overlap into unreadable mush on anything but a tiny series.
  */
 export function pickTickIndices(length: number, maxTicks: number): number[] {

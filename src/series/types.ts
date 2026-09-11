@@ -1,12 +1,7 @@
 import type { Scale } from '../hybridScale.js';
-import type { SeriesPoint } from '../types.js';
+import type { SeriesPoint, ValueRange } from '../types.js';
 
-/** A min/max domain — reused for both the price/value axis and any
- * series-specific range computation. */
-export interface ValueRange {
-  min: number;
-  max: number;
-}
+export type { ValueRange } from '../types.js';
 
 /**
  * Everything a series's `draw` needs to turn its visible points into
@@ -49,7 +44,7 @@ export interface SeriesDefinition<TPoint extends SeriesPoint, TStyle> {
   readonly defaultStyle: TStyle;
   /** Computes the y-domain to auto-fit for the currently visible points,
    * before the user has manually panned/scaled the value axis (see
-   * `Viewport.priceRangeOverride`). `scaleFactor` is the user's manual
+   * `Viewport.valueRangeOverride`). `scaleFactor` is the user's manual
    * vertical-zoom multiplier and should widen/narrow the fitted range
    * around its center, not replace it. */
   getValueRange(visible: TPoint[], scaleFactor: number): ValueRange;

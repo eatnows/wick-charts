@@ -1,7 +1,4 @@
-export interface PriceRange {
-  min: number;
-  max: number;
-}
+import type { ValueRange } from './types.js';
 
 /**
  * Widens/narrows a raw [min, max] domain around its center by
@@ -13,7 +10,7 @@ export interface PriceRange {
  * differs between series types, so that part lives in each series
  * definition instead of here. See `src/series/candlestick.ts` for a caller.
  */
-export function fitRange(rawMin: number, rawMax: number, scaleFactor: number): PriceRange {
+export function fitRange(rawMin: number, rawMax: number, scaleFactor: number): ValueRange {
   const mid = (rawMin + rawMax) / 2;
   const rawHalfSpan = (rawMax - rawMin) / 2 || Math.abs(mid) * 0.01 || 1;
   const halfSpan = rawHalfSpan * scaleFactor;

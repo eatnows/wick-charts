@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CinderChart } from './index';
+import { CinderChart, createCandlestickChart } from './index';
 import { createTestCanvas } from './testHelpers';
 import { resetWasmForTesting } from './wasm';
 import type { Candle } from './types';
@@ -67,11 +67,11 @@ describe('CinderChart', () => {
       { time: 10, open: 2, high: 2, low: 2, close: 2 },
       { time: 20, open: 3, high: 3, low: 3, close: 3 },
     ]);
-    expect(chart.getCandleCount()).toBe(3);
+    expect(chart.getPointCount()).toBe(3);
     expect(chart.getHoveredPoint()).toBeNull(); // nothing hovered yet, just sanity
   });
 
-  it('defaults the visible window to the most recent DEFAULT_VISIBLE_CANDLES candles', () => {
+  it('defaults the visible window to the most recent DEFAULT_VISIBLE_POINTS candles', () => {
     const chart = new CinderChart(canvas);
     chart.setData(makeSeries(500));
     const range = chart.getVisibleRange();
@@ -125,7 +125,7 @@ describe('CinderChart', () => {
 
     it('does not pan past either edge of the loaded data', () => {
       const chart = new CinderChart(canvas);
-      chart.setData(makeSeries(50)); // narrower than DEFAULT_VISIBLE_CANDLES, so already fully zoomed out
+      chart.setData(makeSeries(50)); // narrower than DEFAULT_VISIBLE_POINTS, so already fully zoomed out
       fireMouse(canvas, 'mousedown', { clientX: 100, clientY: 100 });
       fireMouse(canvas, 'mousemove', { clientX: 100_000, clientY: 100 }); // absurd drag distance
       fireMouse(window, 'mouseup', {});
@@ -187,7 +187,7 @@ describe('CinderChart', () => {
     it('has no manual price range until the user touches the price axis', () => {
       const chart = new CinderChart(canvas);
       chart.setData(makeSeries(100));
-      expect(chart.getPriceRangeOverride()).toBeNull();
+      expect(chart.getValueRangeOverride()).toBeNull();
     });
 
     it('dragging inside the chart area also sets a manual price range (vertical pan)', () => {
@@ -198,7 +198,7 @@ describe('CinderChart', () => {
       fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 160 }); // dragged down
       fireMouse(window, 'mouseup', {});
 
-      const range = chart.getPriceRangeOverride();
+      const range = chart.getValueRangeOverride();
       expect(range).not.toBeNull();
     });
 
@@ -213,7 +213,7 @@ describe('CinderChart', () => {
       fireMouse(window, 'mouseup', {});
 
       expect(chart.getVisibleRange()).toEqual(beforeTime); // dragging the axis never pans candles
-      expect(chart.getPriceRangeOverride()).not.toBeNull();
+      expect(chart.getValueRangeOverride()).not.toBeNull();
     });
   });
 
@@ -254,13 +254,13 @@ describe('CinderChart', () => {
 
     it('requests more "before" candles once the window nears the left edge, and merges the result', async () => {
       const chart = new CinderChart(canvas);
-      chart.setData(makeSeries(30, 1000)); // 30 < DEFAULT_VISIBLE_CANDLES → view starts at [0, 30)
+      chart.setData(makeSeries(30, 1000)); // 30 < DEFAULT_VISIBLE_POINTS → view starts at [0, 30)
       const loader = vi.fn(async (req: DataRequest) =>
         req.direction === 'before' ? makeSeries(15, 1000 - 15) : [],
       );
       chart.setDataLoader(loader, 5); // small threshold so one batch clears it
       chart.render(); // render() is what triggers maybeLoadMore()
-      await vi.waitFor(() => expect(chart.getCandleCount()).toBe(45));
+      await vi.waitFor(() => expect(chart.getPointCount()).toBe(45));
       expect(loader.mock.calls.some(([req]) => req.direction === 'before')).toBe(true);
     });
 
@@ -310,7 +310,7 @@ describe('CinderChart', () => {
       expect(loader).toHaveBeenCalledTimes(2); // one per direction — no duplicates within either
 
       pendingResolvers.forEach((resolve) => resolve([]));
-      await vi.waitFor(() => expect(chart.getCandleCount()).toBe(10));
+      await vi.waitFor(() => expect(chart.getPointCount()).toBe(10));
     });
 
     it('keeps the visible window stable (no jump) when candles are prepended', async () => {
@@ -323,7 +323,7 @@ describe('CinderChart', () => {
       chart.setDataLoader(loader, 5);
 
       chart.render();
-      await vi.waitFor(() => expect(chart.getCandleCount()).toBe(25));
+      await vi.waitFor(() => expect(chart.getPointCount()).toBe(25));
 
       // 15 candles were prepended; the same candles that were visible before
       // should still be visible, just at indices shifted by 15.
@@ -359,7 +359,7 @@ describe('CinderChart', () => {
       onTouchEnd(fakeTouchEvent([]));
 
       expect(chart.getVisibleRange()).toEqual(beforeRange); // never pans
-      expect(chart.getPriceRangeOverride()).not.toBeNull();
+      expect(chart.getValueRangeOverride()).not.toBeNull();
     });
 
     it('a two-finger pinch spreading apart zooms in (fewer candles visible)', () => {
@@ -558,6 +558,15 @@ describe('CinderChart', () => {
     });
   });
 
+  describe('createCandlestickChart', () => {
+    it('builds a working candlestick chart with type-checked style options', () => {
+      const chart = createCandlestickChart(canvas, { style: { upColor: '#00ff00' } });
+      chart.setData(makeSeries(10));
+      expect(() => chart.render()).not.toThrow();
+      expect(chart.getPointCount()).toBe(10);
+    });
+  });
+
   describe('plugins', () => {
     it('draws a registered plugin on top of the series every frame', () => {
       const chart = new CinderChart(canvas);
@@ -602,6 +611,65 @@ describe('CinderChart', () => {
       expect(seenApi).toBeDefined();
       expect(seenApi!.chartWidth).toBeGreaterThan(0);
       expect(seenApi!.chartHeight).toBeGreaterThan(0);
+    });
+
+    it('lets a plugin call yForValue synchronously but throws if called after the frame ends', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      let stashedYForValue: ((value: number) => number) | undefined;
+
+      chart.addPlugin({
+        draw: (api) => {
+          expect(() => api.yForValue(100)).not.toThrow();
+          stashedYForValue = api.yForValue;
+        },
+      });
+      chart.render();
+
+      expect(() => stashedYForValue!(100)).toThrow(/frame ended/);
+    });
+
+    it('isolates canvas state between plugins with save/restore', () => {
+      const { canvas: c, ctx } = createTestCanvas(800, 400);
+      const chart = new CinderChart(c);
+      chart.setData(makeSeries(10));
+
+      chart.addPlugin({ draw: () => {} });
+      chart.addPlugin({ draw: () => {} });
+
+      const saveCallsBefore = ctx.save.mock.calls.length;
+      const restoreCallsBefore = ctx.restore.mock.calls.length;
+      chart.render();
+
+      // one save/restore pair per plugin, on top of whatever the crosshair
+      // rendering already does
+      expect(ctx.save.mock.calls.length - saveCallsBefore).toBeGreaterThanOrEqual(2);
+      expect(ctx.restore.mock.calls.length - restoreCallsBefore).toBeGreaterThanOrEqual(2);
+    });
+
+    it('keeps rendering later plugins and does not throw when one plugin throws', () => {
+      const { canvas: c } = createTestCanvas(800, 400);
+      const chart = new CinderChart(c);
+      chart.setData(makeSeries(10));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const secondDraw = vi.fn();
+
+      chart.addPlugin({
+        draw: () => {
+          throw new Error('boom');
+        },
+      });
+      chart.addPlugin({ draw: secondDraw });
+
+      expect(() => chart.render()).not.toThrow();
+      expect(secondDraw).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalled();
+
+      // addPlugin() above already scheduled an async render (via rAF) that
+      // would otherwise fire after this test returns and log to the real
+      // console.error once the spy below is restored — destroy() cancels it.
+      chart.destroy();
+      errorSpy.mockRestore();
     });
   });
 });

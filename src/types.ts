@@ -13,17 +13,18 @@ export interface UnixMillis {
 }
 
 /**
- * A point in time for a candle. Deliberately a union of several shapes
- * instead of one flexible-but-ambiguous type, because time representation
- * is not universal across data sources:
+ * A point in time for any plotted point (candle, line point, etc.).
+ * Deliberately a union of several shapes instead of one
+ * flexible-but-ambiguous type, because time representation is not
+ * universal across data sources:
  *  - a bare `number`: unix timestamp in **seconds**
  *  - `{ unixMs }`: unix timestamp in **milliseconds**
  *  - `{ businessDay }`: a calendar day with no time-of-day
  *  - a `string`: ISO 8601
  *
  * Adding a new source format means adding one case to `src/time.ts`'s
- * strategy list — this type and the call sites that consume `Candle` never
- * need to change.
+ * strategy list — this type and the call sites that consume `SeriesPoint`
+ * never need to change.
  */
 export type CinderTime = number | string | UnixMillis | { businessDay: BusinessDay };
 
@@ -38,6 +39,18 @@ export type CinderTime = number | string | UnixMillis | { businessDay: BusinessD
  */
 export interface SeriesPoint {
   time: CinderTime;
+}
+
+/**
+ * A y-domain — a value axis range. The single `{min, max}` shape shared by
+ * `SeriesDefinition.getValueRange`'s result, `Viewport.valueRangeOverride`,
+ * and `src/priceRange.ts`'s `fitRange` helper, so all three talk about "the
+ * currently plotted range" the same way regardless of which series (or
+ * whether the user has manually overridden the axis) produced it.
+ */
+export interface ValueRange {
+  min: number;
+  max: number;
 }
 
 export interface Candle extends SeriesPoint {
