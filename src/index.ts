@@ -4,14 +4,18 @@ import { autoFitPriceRange } from './priceRange.js';
 import { CandleRenderer } from './renderer.js';
 import { toUnixSeconds } from './time.js';
 import { Viewport } from './viewport.js';
+import { loadWasm } from './wasm.js';
+import { importRealWasm } from './wasmImporter.js';
 import type { Candle, CinderChartOptions } from './types.js';
 
 export type { BusinessDay, Candle, CinderChartOptions, CinderTime, UnixMillis } from './types.js';
 export type { DataLoader, DataRequest } from './dataSource.js';
+export type { Scale } from './hybridScale.js';
 export { mergeCandles } from './mergeCandles.js';
 export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
+export { getCachedWasmModule, loadWasm } from './wasm.js';
 
 type DragMode = 'pan' | 'price-scale' | null;
 type LoadDirection = 'before' | 'after';
@@ -57,6 +61,10 @@ export class CinderChart {
     this.renderer = new CandleRenderer(canvas, options);
     this.viewport = new Viewport(0);
     this.attachEvents();
+    // Kicked off once per chart instance, not awaited — the renderer reads
+    // whatever's cached synchronously (see hybridScale.ts) and just keeps
+    // using the JS fallback for every render before this resolves.
+    void loadWasm(importRealWasm);
   }
 
   setData(candles: Candle[]): this {

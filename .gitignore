@@ -1,6 +1,7 @@
 node_modules
 dist
 pkg
+wasm-pkg
 target
 *.tsbuildinfo
 .DS_Store

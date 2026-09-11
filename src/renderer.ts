@@ -1,7 +1,8 @@
 import { formatAxisLabel, pickTickIndices } from './axis.js';
+import { createScale } from './hybridScale.js';
 import { formatPrice, niceTicks } from './priceAxis.js';
 import { autoFitPriceRange } from './priceRange.js';
-import { LinearScale } from './scale.js';
+import type { Scale } from './hybridScale.js';
 import type { Candle, CinderChartOptions } from './types.js';
 import type { Viewport } from './viewport.js';
 
@@ -89,44 +90,67 @@ export class CandleRenderer {
     const { min: priceMin, max: priceMax } =
       viewport.priceRangeOverride ?? autoFitPriceRange(visible, viewport.priceScaleFactor);
 
-    const yScale = new LinearScale(priceMin, priceMax, chartHeight, 0);
-    const slotWidth = chartWidth / viewport.visibleCount;
-    const bodyWidth = Math.max(1, slotWidth * 0.6);
+    // JS below a few hundred points, WASM above — see hybridScale.ts.
+    // Whichever it picks, `dispose()` must run once we're done reading
+    // from it (a no-op on the JS path, a real WASM memory free otherwise).
+    const { scale: yScale, dispose: disposeYScale } = createScale(
+      priceMin,
+      priceMax,
+      chartHeight,
+      0,
+      visible.length,
+    );
 
-    // x position for a *global* sorted-array index — honors the (possibly
-    // fractional) viewport.startIndex so panning is pixel-smooth, not
-    // stepped a whole candle at a time.
-    const xForIndex = (globalIndex: number) => (globalIndex - viewport.startIndex) * slotWidth + slotWidth / 2;
+    try {
+      const slotWidth = chartWidth / viewport.visibleCount;
+      const bodyWidth = Math.max(1, slotWidth * 0.6);
 
-    visible.forEach((candle, i) => {
-      const x = xForIndex(startIdx + i);
-      const isUp = candle.close >= candle.open;
-      ctx.strokeStyle = ctx.fillStyle = isUp ? options.upColor : options.downColor;
+      // x position for a *global* sorted-array index — honors the (possibly
+      // fractional) viewport.startIndex so panning is pixel-smooth, not
+      // stepped a whole candle at a time.
+      const xForIndex = (globalIndex: number) => (globalIndex - viewport.startIndex) * slotWidth + slotWidth / 2;
 
-      ctx.beginPath();
-      ctx.moveTo(x, yScale.map(candle.high));
-      ctx.lineTo(x, yScale.map(candle.low));
-      ctx.stroke();
+      // Batched through mapMany (one call per array) rather than four
+      // map() calls per candle in the loop below — the batch is what lets
+      // the WASM path pay the JS↔WASM boundary cost once per frame instead
+      // of once per point.
+      const yHighs = yScale.mapMany(visible.map((c) => c.high));
+      const yLows = yScale.mapMany(visible.map((c) => c.low));
+      const yOpens = yScale.mapMany(visible.map((c) => c.open));
+      const yCloses = yScale.mapMany(visible.map((c) => c.close));
 
-      const yOpen = yScale.map(candle.open);
-      const yClose = yScale.map(candle.close);
-      const top = Math.min(yOpen, yClose);
-      const bodyHeight = Math.max(1, Math.abs(yClose - yOpen));
-      ctx.fillRect(x - bodyWidth / 2, top, bodyWidth, bodyHeight);
-    });
+      visible.forEach((candle, i) => {
+        const x = xForIndex(startIdx + i);
+        const isUp = candle.close >= candle.open;
+        ctx.strokeStyle = ctx.fillStyle = isUp ? options.upColor : options.downColor;
 
-    this.renderPriceAxis(priceMin, priceMax, yScale, chartWidth, chartHeight);
-    this.renderTimeAxis(times, startIdx, visible.length, chartHeight, chartWidth, xForIndex);
+        ctx.beginPath();
+        ctx.moveTo(x, yHighs[i]!);
+        ctx.lineTo(x, yLows[i]!);
+        ctx.stroke();
 
-    if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
-      this.renderCrosshairAndLegend(sorted[hoverIndex]!, xForIndex(hoverIndex), chartHeight);
+        const yOpen = yOpens[i]!;
+        const yClose = yCloses[i]!;
+        const top = Math.min(yOpen, yClose);
+        const bodyHeight = Math.max(1, Math.abs(yClose - yOpen));
+        ctx.fillRect(x - bodyWidth / 2, top, bodyWidth, bodyHeight);
+      });
+
+      this.renderPriceAxis(priceMin, priceMax, yScale, chartWidth, chartHeight);
+      this.renderTimeAxis(times, startIdx, visible.length, chartHeight, chartWidth, xForIndex);
+
+      if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
+        this.renderCrosshairAndLegend(sorted[hoverIndex]!, xForIndex(hoverIndex), chartHeight);
+      }
+    } finally {
+      disposeYScale();
     }
   }
 
   private renderPriceAxis(
     priceMin: number,
     priceMax: number,
-    yScale: LinearScale,
+    yScale: Scale,
     chartWidth: number,
     chartHeight: number,
   ): void {
