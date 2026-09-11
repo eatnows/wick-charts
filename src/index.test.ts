@@ -21,6 +21,31 @@ function fireWheel(target: EventTarget, init: WheelEventInit): void {
   target.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init }));
 }
 
+// jsdom does not implement the Touch Events spec (no `Touch`/`TouchEvent`
+// constructors), so touch input can't be exercised via real dispatchEvent()
+// the way mouse/wheel input is above. Instead, call the chart's touch
+// handlers directly with a minimal object shaped like a real TouchEvent —
+// they only ever read `.touches` and call `.preventDefault()`.
+function touchPoint(clientX: number, clientY: number): Touch {
+  return { clientX, clientY } as Touch;
+}
+
+function fakeTouchEvent(touches: Touch[]): TouchEvent {
+  return { touches, preventDefault: () => {} } as unknown as TouchEvent;
+}
+
+function chartTouchHandlers(chart: CinderChart): {
+  onTouchStart: (e: TouchEvent) => void;
+  onTouchMove: (e: TouchEvent) => void;
+  onTouchEnd: (e: TouchEvent) => void;
+} {
+  return chart as unknown as {
+    onTouchStart: (e: TouchEvent) => void;
+    onTouchMove: (e: TouchEvent) => void;
+    onTouchEnd: (e: TouchEvent) => void;
+  };
+}
+
 describe('CinderChart', () => {
   let canvas: HTMLCanvasElement;
 
@@ -305,6 +330,92 @@ describe('CinderChart', () => {
       const after = chart.getVisibleRange();
       expect(after.startIndex).toBe(before.startIndex + 15);
       expect(after.endIndex).toBe(before.endIndex + 15);
+    });
+  });
+
+  describe('touch input', () => {
+    it('a single-finger drag pans the same way a mouse drag does', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+      const before = chart.getVisibleRange().startIndex;
+
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100)]));
+      onTouchMove(fakeTouchEvent([touchPoint(400, 100)])); // dragged right → earlier candles
+      onTouchEnd(fakeTouchEvent([]));
+
+      expect(chart.getVisibleRange().startIndex).toBeLessThan(before);
+    });
+
+    it('a single-finger drag starting on the price-axis strip scales price instead of panning', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(100));
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+      const beforeRange = chart.getVisibleRange();
+
+      // chartWidth = 800 - 64 = 736; x=770 is inside the 64px price-axis strip
+      onTouchStart(fakeTouchEvent([touchPoint(770, 100)]));
+      onTouchMove(fakeTouchEvent([touchPoint(770, 160)]));
+      onTouchEnd(fakeTouchEvent([]));
+
+      expect(chart.getVisibleRange()).toEqual(beforeRange); // never pans
+      expect(chart.getPriceRangeOverride()).not.toBeNull();
+    });
+
+    it('a two-finger pinch spreading apart zooms in (fewer candles visible)', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(1000, 0));
+      // zoom out first via a wheel gesture so there's room to zoom back in
+      fireWheel(canvas, { deltaX: 0, deltaY: 100, clientX: 400, clientY: 200 });
+      const before = chart.getVisibleRange().visibleCount;
+
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+      onTouchStart(fakeTouchEvent([touchPoint(350, 200), touchPoint(450, 200)])); // 100px apart
+      onTouchMove(fakeTouchEvent([touchPoint(250, 200), touchPoint(550, 200)])); // 300px apart — spread out
+      onTouchEnd(fakeTouchEvent([]));
+
+      expect(chart.getVisibleRange().visibleCount).toBeLessThan(before);
+    });
+
+    it('a two-finger pinch coming together zooms out (more candles visible)', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(1000));
+      const before = chart.getVisibleRange().visibleCount;
+
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+      onTouchStart(fakeTouchEvent([touchPoint(250, 200), touchPoint(550, 200)])); // 300px apart
+      onTouchMove(fakeTouchEvent([touchPoint(350, 200), touchPoint(450, 200)])); // 100px apart — pinched in
+      onTouchEnd(fakeTouchEvent([]));
+
+      expect(chart.getVisibleRange().visibleCount).toBeGreaterThan(before);
+    });
+
+    it('a second finger landing cancels an in-progress single-finger drag', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100)]));
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100), touchPoint(300, 100)])); // second finger lands
+      const afterSecondFinger = chart.getVisibleRange();
+
+      // a stray single-touch move event (e.g. a delayed one from before the
+      // second finger landed) should not resume panning
+      onTouchMove(fakeTouchEvent([touchPoint(400, 100)]));
+      expect(chart.getVisibleRange()).toEqual(afterSecondFinger);
+    });
+
+    it('lifting all fingers stops the drag the way mouseup does', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100)]));
+      onTouchEnd(fakeTouchEvent([])); // lifted before any move
+      const before = chart.getVisibleRange();
+
+      onTouchMove(fakeTouchEvent([touchPoint(400, 100)])); // should be ignored — no active drag
+      expect(chart.getVisibleRange()).toEqual(before);
     });
   });
 

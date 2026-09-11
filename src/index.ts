@@ -46,6 +46,12 @@ export class CinderChart {
   private lastX = 0;
   private lastY = 0;
   private renderScheduled = false;
+  /** Distance (CSS px) between two touches on the previous touchmove —
+   * `null` whenever fewer than two fingers are down. Compared frame to
+   * frame (not against a fixed start value) so it composes naturally with
+   * the same incremental-delta style `applyPanDelta`/`applyPriceScaleDelta`
+   * already use. */
+  private pinchLastDistance: number | null = null;
 
   private loader: DataLoader | null = null;
   private loadThreshold = DEFAULT_LOAD_THRESHOLD;
@@ -61,6 +67,10 @@ export class CinderChart {
   ) {
     this.renderer = new CandleRenderer(canvas, options);
     this.viewport = new Viewport(0);
+    // Without this, a touch drag on the canvas also scrolls/zooms the page
+    // underneath it — the browser's native touch gestures and this class's
+    // own pan/pinch handling would otherwise fight over the same gesture.
+    canvas.style.touchAction = 'none';
     this.attachEvents();
     // Kicked off once per chart instance, not awaited — the renderer reads
     // whatever's cached synchronously (see hybridScale.ts) and just keeps
@@ -154,6 +164,10 @@ export class CinderChart {
     window.removeEventListener('mouseup', this.onMouseUp);
     canvas.removeEventListener('mouseleave', this.onMouseLeave);
     canvas.removeEventListener('wheel', this.onWheel);
+    canvas.removeEventListener('touchstart', this.onTouchStart);
+    canvas.removeEventListener('touchmove', this.onTouchMove);
+    canvas.removeEventListener('touchend', this.onTouchEnd);
+    canvas.removeEventListener('touchcancel', this.onTouchEnd);
   }
 
   private attachEvents(): void {
@@ -163,6 +177,12 @@ export class CinderChart {
     window.addEventListener('mouseup', this.onMouseUp);
     canvas.addEventListener('mouseleave', this.onMouseLeave);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    // touchstart/touchmove must be non-passive since they call
+    // preventDefault() to stop the page from scrolling under the drag.
+    canvas.addEventListener('touchstart', this.onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', this.onTouchEnd);
+    canvas.addEventListener('touchcancel', this.onTouchEnd);
   }
 
   private onMouseDown = (e: MouseEvent): void => {
@@ -179,49 +199,13 @@ export class CinderChart {
 
   private onMouseMove = (e: MouseEvent): void => {
     if (this.dragMode === 'pan') {
-      // e.clientX/Y are in CSS pixels; chartWidth/chartHeight are in canvas
-      // backing-store (device) pixels, which differ under devicePixelRatio
-      // scaling — convert before dividing or drags feel sluggish/dead on
-      // high-DPI screens.
-      const deltaXCss = e.clientX - this.lastX;
-      const deltaYCss = e.clientY - this.lastY;
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
-
-      const deltaXDevice = deltaXCss * this.devicePixelScaleX();
-      const slotWidth = this.renderer.chartWidth / this.viewport.visibleCount;
-      if (slotWidth > 0) {
-        // Dragging right pulls the timeline back into view — like sliding
-        // paper under a fixed magnifier — so pixel delta and index delta
-        // have opposite sign.
-        this.viewport.pan(-deltaXDevice / slotWidth, this.sorted.length);
-      }
-
-      const chartHeight = this.renderer.chartHeight;
-      if (chartHeight > 0 && this.viewport.priceRangeOverride) {
-        const deltaYDevice = deltaYCss * this.devicePixelScaleY();
-        const { min, max } = this.viewport.priceRangeOverride;
-        const pricePerPixel = (max - min) / chartHeight;
-        // Dragging down moves the visible price window down (content
-        // follows the cursor), matching the horizontal drag's "grab and
-        // slide" feel — see cinderchart#pan for the mirrored X case.
-        this.viewport.panPriceRange(deltaYDevice * pricePerPixel);
-      }
-
-      this.scheduleRender();
+      this.applyPanDelta(e.clientX, e.clientY);
       return;
     }
-
     if (this.dragMode === 'price-scale') {
-      const deltaY = e.clientY - this.lastY;
-      this.lastY = e.clientY;
-      // Dragging the price axis down widens the visible price range
-      // (candles shrink); dragging up narrows it (candles grow).
-      this.viewport.scalePriceRange(Math.pow(1.006, deltaY));
-      this.scheduleRender();
+      this.applyPriceScaleDelta(e.clientY);
       return;
     }
-
     this.updateHover(e);
   };
 
@@ -236,6 +220,120 @@ export class CinderChart {
       this.scheduleRender();
     }
   };
+
+  /** Shared by both mouse drag and single-finger touch drag: shifts the
+   * visible time window and, once the price axis is in manual mode, the
+   * visible price window too — see the "pan" branch `onMouseMove` used to
+   * inline before mouse and touch needed the exact same math. */
+  private applyPanDelta(clientX: number, clientY: number): void {
+    // Coordinates are in CSS pixels; chartWidth/chartHeight are in canvas
+    // backing-store (device) pixels, which differ under devicePixelRatio
+    // scaling — convert before dividing or drags feel sluggish/dead on
+    // high-DPI screens.
+    const deltaXCss = clientX - this.lastX;
+    const deltaYCss = clientY - this.lastY;
+    this.lastX = clientX;
+    this.lastY = clientY;
+
+    const deltaXDevice = deltaXCss * this.devicePixelScaleX();
+    const slotWidth = this.renderer.chartWidth / this.viewport.visibleCount;
+    if (slotWidth > 0) {
+      // Dragging right pulls the timeline back into view — like sliding
+      // paper under a fixed magnifier — so pixel delta and index delta
+      // have opposite sign.
+      this.viewport.pan(-deltaXDevice / slotWidth, this.sorted.length);
+    }
+
+    const chartHeight = this.renderer.chartHeight;
+    if (chartHeight > 0 && this.viewport.priceRangeOverride) {
+      const deltaYDevice = deltaYCss * this.devicePixelScaleY();
+      const { min, max } = this.viewport.priceRangeOverride;
+      const pricePerPixel = (max - min) / chartHeight;
+      // Dragging down moves the visible price window down (content
+      // follows the cursor), matching the horizontal drag's "grab and
+      // slide" feel — see the pan call above for the mirrored X case.
+      this.viewport.panPriceRange(deltaYDevice * pricePerPixel);
+    }
+
+    this.scheduleRender();
+  }
+
+  /** Shared by both mouse drag and single-finger touch drag on the
+   * price-axis strip. */
+  private applyPriceScaleDelta(clientY: number): void {
+    const deltaY = clientY - this.lastY;
+    this.lastY = clientY;
+    // Dragging the price axis down widens the visible price range
+    // (candles shrink); dragging up narrows it (candles grow).
+    this.viewport.scalePriceRange(Math.pow(1.006, deltaY));
+    this.scheduleRender();
+  }
+
+  private onTouchStart = (e: TouchEvent): void => {
+    e.preventDefault();
+
+    if (e.touches.length === 2) {
+      // A second finger landing takes over from whatever single-finger
+      // drag might have been in progress.
+      this.dragMode = null;
+      this.pinchLastDistance = this.touchDistance(e.touches[0]!, e.touches[1]!);
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]!;
+      const { x } = this.cursorPosition(touch);
+      this.dragMode = x >= this.renderer.chartWidth ? 'price-scale' : 'pan';
+      this.lastX = touch.clientX;
+      this.lastY = touch.clientY;
+      this.ensurePriceRangeOverride();
+    }
+  };
+
+  private onTouchMove = (e: TouchEvent): void => {
+    e.preventDefault();
+
+    if (e.touches.length === 2) {
+      const [t0, t1] = [e.touches[0]!, e.touches[1]!];
+      const distance = this.touchDistance(t0, t1);
+      const slotWidth = this.renderer.chartWidth / this.viewport.visibleCount;
+
+      if (this.pinchLastDistance !== null && slotWidth > 0) {
+        const { x } = this.cursorPosition({
+          clientX: (t0.clientX + t1.clientX) / 2,
+          clientY: (t0.clientY + t1.clientY) / 2,
+        });
+        const anchorIndex = this.viewport.startIndex + x / slotWidth;
+        // Fingers spreading apart (distance growing) zooms in, matching
+        // the standard pinch-to-zoom direction — mirrors onWheel's
+        // "scroll down = zoom out" the same way a trackpad pinch does.
+        const factor = this.pinchLastDistance / distance;
+        this.viewport.zoom(factor, anchorIndex, this.sorted.length);
+        this.scheduleRender();
+      }
+
+      this.pinchLastDistance = distance;
+      return;
+    }
+
+    if (e.touches.length === 1 && this.dragMode) {
+      const touch = e.touches[0]!;
+      if (this.dragMode === 'pan') {
+        this.applyPanDelta(touch.clientX, touch.clientY);
+      } else {
+        this.applyPriceScaleDelta(touch.clientY);
+      }
+    }
+  };
+
+  private onTouchEnd = (e: TouchEvent): void => {
+    if (e.touches.length < 2) this.pinchLastDistance = null;
+    if (e.touches.length === 0) this.dragMode = null;
+  };
+
+  private touchDistance(a: Touch, b: Touch): number {
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -349,14 +447,17 @@ export class CinderChart {
     this.viewport.setPriceRangeOverride(autoFitPriceRange(visible, this.viewport.priceScaleFactor));
   }
 
-  /** Cursor position in canvas backing-store pixels, accounting for the
-   * gap between the canvas's CSS display size and its drawing-buffer size
-   * (e.g. when the canvas width attribute is device-pixel-ratio scaled). */
-  private cursorPosition(e: MouseEvent): { x: number; y: number } {
+  /** Position in canvas backing-store pixels, accounting for the gap
+   * between the canvas's CSS display size and its drawing-buffer size
+   * (e.g. when the canvas width attribute is device-pixel-ratio scaled).
+   * Takes any `{clientX, clientY}` point rather than `MouseEvent`
+   * specifically, since a `Touch` (or a synthesized pinch midpoint) has
+   * the same two fields and needs the exact same conversion. */
+  private cursorPosition(point: { clientX: number; clientY: number }): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left) * this.devicePixelScaleX(),
-      y: (e.clientY - rect.top) * this.devicePixelScaleY(),
+      x: (point.clientX - rect.left) * this.devicePixelScaleX(),
+      y: (point.clientY - rect.top) * this.devicePixelScaleY(),
     };
   }
 

@@ -46,11 +46,11 @@ cargo check --target wasm32-unknown-unknown        # compiles for the wasm targe
 
 ## Status
 
-Interactive: pan (drag or horizontal scroll), zoom (vertical scroll, cursor-anchored),
-price-axis drag-to-scale, hover crosshair with an OHLC legend, and on-demand history
-loading via `setDataLoader`. Coordinate scaling runs on WASM once a frame's point count
-crosses the threshold, JS below it. No drawing tools or multi-pane indicators yet. Not
-published to npm.
+Interactive on both mouse and touch: pan (drag or horizontal scroll/swipe), zoom (vertical
+scroll or a two-finger pinch, both cursor/midpoint-anchored), price-axis drag-to-scale,
+hover crosshair with an OHLC legend, and on-demand history loading via `setDataLoader`.
+Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
+it. No drawing tools or multi-pane indicators yet. Not published to npm.
 
 ## License
 
