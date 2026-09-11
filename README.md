@@ -10,6 +10,157 @@ usage starts. cinderchart aims to cover that ground natively from the start, whi
 rendering on the simplest thing that can possibly work (Canvas2D — no WebGL until profiling
 says it's actually needed).
 
+## Usage
+
+Not published to npm yet — for now, clone this repo, build it, and import from its `dist/`
+(either via a local path/workspace dependency, or by copying `dist/` and `wasm-pkg/` into your
+own project, keeping them siblings — see "Install" below for why that layout matters).
+
+### Install
+
+```bash
+git clone <this-repo> cinderchart
+cd cinderchart
+pnpm install
+pnpm build:wasm   # requires the Rust toolchain + wasm-pack; produces wasm-pkg/
+pnpm build        # produces dist/
+```
+
+`dist/` and `wasm-pkg/` must stay siblings (the compiled JS does `import('../wasm-pkg/...')`
+relative to its own location). If you copy the library into another project rather than
+depending on it in place, copy both directories together. This isn't a hard requirement,
+though — a missing or unreachable `wasm-pkg/` is caught internally and the chart falls back to
+the plain-JS scale for every frame (see "WASM" below), so a broken path degrades performance
+silently rather than crashing.
+
+### Quick start
+
+```html
+<canvas id="chart"></canvas>
+```
+
+```ts
+import { createCandlestickChart } from 'cinderchart';
+
+const canvas = document.getElementById('chart') as HTMLCanvasElement;
+
+// The canvas element's width/height attributes are its backing-store
+// (pixel) size — independent of whatever size CSS displays it at. Set
+// both explicitly (accounting for devicePixelRatio) before constructing
+// the chart, and again on every resize.
+function resizeCanvas() {
+  const rect = canvas.parentElement!.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+}
+resizeCanvas();
+
+const chart = createCandlestickChart(canvas);
+
+chart.setData([
+  { time: '2024-01-01T00:00:00Z', open: 100, high: 105, low: 98, close: 103 },
+  { time: '2024-01-02T00:00:00Z', open: 103, high: 110, low: 101, close: 108 },
+  { time: '2024-01-03T00:00:00Z', open: 108, high: 109, low: 104, close: 106 },
+  // ...
+]);
+
+chart.render();
+
+window.addEventListener('resize', () => {
+  resizeCanvas();
+  chart.render(); // re-render at the new backing-store size
+});
+```
+
+Panning, zooming, the price-axis drag, hover, and touch (single-finger pan, pinch-to-zoom,
+long-press to scrub) all work immediately after `render()` — no further wiring needed; see
+"Status" below for the full interaction list.
+
+### Candle data
+
+A candle is `{ time, open, high, low, close, volume? }`. `time` accepts several shapes so you
+don't have to pre-convert whatever your data source hands you:
+
+```ts
+{ time: 1704067200 }                                  // unix seconds
+{ time: { unixMs: 1704067200000 } }                   // unix milliseconds
+{ time: '2024-01-01T00:00:00Z' }                       // ISO 8601 string
+{ time: { businessDay: { year: 2024, month: 1, day: 1 } } } // calendar day, no time-of-day
+```
+
+`setData()` sorts by time itself, so passing data in any order (or re-calling it with a fresh
+array) is safe. It resets pan/zoom/hover state — call it for a genuinely new dataset, and use
+`setDataLoader()` (below) to extend the current one instead.
+
+### Styling
+
+```ts
+const chart = createCandlestickChart(canvas, {
+  background: '#0d1117',
+  style: { upColor: '#26a69a', downColor: '#ef5350' },
+});
+```
+
+`background` is transparent by default. `style` is merged over the series's own defaults, so
+you only need to specify what you're overriding. `createCandlestickChart` type-checks `style`
+against `CandlestickStyle`; the more general `new CinderChart(canvas, { type: 'candlestick',
+style })` also works but doesn't — see "Series types" below for why, if you're curious.
+
+### Reading chart state
+
+Useful for building UI around the canvas (a legend, a toolbar, a "jump to latest" button)
+without reaching into the chart's internals:
+
+```ts
+chart.getPointCount();        // total candles loaded (not just visible)
+chart.getVisibleRange();      // { startIndex, endIndex, visibleCount }
+chart.getValueRangeOverride(); // { min, max } once the user has dragged the price axis, else null
+chart.getHoveredPoint();      // the candle under the cursor/finger, or null
+```
+
+### Loading more history on demand
+
+`setDataLoader` lets you start with a small window and stream in more as the user pans toward
+either edge, without the library ever calling `fetch` itself:
+
+```ts
+chart.setDataLoader(async ({ direction, boundary, count }) => {
+  // direction: 'before' (user panned toward older data) or 'after' (toward newer)
+  // boundary: unix seconds — the earliest ('before') or latest ('after') time already loaded
+  // count: how many candles would satisfy this request (a hint, not a hard requirement)
+  const candles = await fetchCandlesFrom(direction, boundary, count);
+  return candles; // an empty array tells the chart "no more data this way" until setData() resets it
+}, /* threshold, in candles, default 20 */ 20);
+```
+
+### Extending: plugins
+
+For overlays on top of the chart (markers, alert lines, annotations) that don't need to be a
+whole chart type of their own:
+
+```ts
+chart.addPlugin({
+  draw({ ctx, xForIndex, yForValue, visibleStartIndex, visibleEndIndex }) {
+    const index = 42;
+    if (index < visibleStartIndex || index >= visibleEndIndex) return;
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath();
+    ctx.arc(xForIndex(index), yForValue(150), 4, 0, Math.PI * 2);
+    ctx.fill();
+  },
+});
+```
+
+Only call `xForIndex`/`yForValue` synchronously inside `draw()` — see "Plugins" below for why.
+`removePlugin()` takes the same object back out.
+
+### Cleanup
+
+Call `chart.destroy()` when you're done with a chart (component unmount, etc.) — it removes a
+window-level listener and cancels any pending scheduled render that a plain garbage collect
+wouldn't clean up on its own.
+
 ## Architecture
 
 - **`crates/cinderchart-core`** (Rust → WASM): owns numeric hot paths — domain→pixel
