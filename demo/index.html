@@ -13,26 +13,20 @@
   .hint b{color:#c9d1d9}
   #canvas-holder{flex:1;min-height:0;position:relative}
   canvas{width:100%;height:100%;display:block;cursor:crosshair}
-  #load-indicator{
-    position:absolute;top:10px;right:76px;font-size:11px;color:#e0a83f;
-    background:#1b212b;border:1px solid #2b3240;border-radius:6px;padding:4px 9px;
-    opacity:0;transition:opacity .15s;pointer-events:none;
-  }
-  #load-indicator.visible{opacity:1}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>cinderchart</h1>
-    <p>동적 로딩 데모 — 초기 200개만 로드, 끝까지 팬하면 더 불러옴</p>
+    <p>On-demand history loading — starts with 200 candles, more streams in as you pan</p>
   </header>
   <div class="hint">
-    드래그: <b>차트 영역</b> = 좌우/상하 이동 · <b>오른쪽 가격축</b> = 세로 드래그로 스케일 조정 · 휠: 확대/축소(세로) · 좌우 스와이프: 팬 · 마우스오버: OHLC 정보
+    Drag: <b>chart area</b> pans/tilts the price range · <b>right price axis</b> scales it vertically ·
+    scroll (vertical): zoom · trackpad swipe / shift+scroll: pan · hover: OHLC info
   </div>
   <div id="canvas-holder">
     <canvas id="chart"></canvas>
-    <div id="load-indicator">불러오는 중…</div>
   </div>
 </div>
 
@@ -72,41 +66,32 @@
 
   // Initial window: only indices [300, 499] (200 candles) are "loaded."
   // Panning toward either edge crosses the chart's load threshold and
-  // triggers the loader below.
+  // triggers the loader below, well before the user actually reaches it
+  // (see LOAD_THRESHOLD) — the goal is that fetching never becomes visible.
   const INITIAL_MIN = 300;
   const INITIAL_MAX = 499;
   const HISTORY_FLOOR = -1800; // 'before' loader returns [] past this — demonstrates the exhausted state
   const FUTURE_CEILING = 700; // 'after' loader returns [] past this
+  const LOAD_THRESHOLD = 60; // ask this far from the edge, not right at it
+  const SIMULATED_LATENCY_MS = 60; // still genuinely async, just fast enough to stay ahead of a normal drag
 
   let loadedMin = INITIAL_MIN;
   let loadedMax = INITIAL_MAX;
 
-  const indicator = document.getElementById('load-indicator');
-  let pending = 0;
-  function setLoading(on) {
-    pending += on ? 1 : -1;
-    indicator.classList.toggle('visible', pending > 0);
-  }
-
   async function loader({ direction, count }) {
-    setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 250)); // simulate network latency
-    try {
-      if (direction === 'before') {
-        const to = loadedMin - 1;
-        const from = Math.max(HISTORY_FLOOR, loadedMin - count);
-        if (from > to) return [];
-        loadedMin = from;
-        return generateRange(from, to);
-      }
-      const from = loadedMax + 1;
-      const to = Math.min(FUTURE_CEILING, loadedMax + count);
+    await new Promise((resolve) => setTimeout(resolve, SIMULATED_LATENCY_MS));
+    if (direction === 'before') {
+      const to = loadedMin - 1;
+      const from = Math.max(HISTORY_FLOOR, loadedMin - count);
       if (from > to) return [];
-      loadedMax = to;
+      loadedMin = from;
       return generateRange(from, to);
-    } finally {
-      setLoading(false);
     }
+    const from = loadedMax + 1;
+    const to = Math.min(FUTURE_CEILING, loadedMax + count);
+    if (from > to) return [];
+    loadedMax = to;
+    return generateRange(from, to);
   }
 
   const canvas = document.getElementById('chart');
@@ -121,7 +106,7 @@
 
   resizeCanvas();
   const chart = new CinderChart(canvas, { upColor: '#26a69a', downColor: '#ef5350' });
-  chart.setDataLoader(loader);
+  chart.setDataLoader(loader, LOAD_THRESHOLD);
   chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));
   chart.render();
 
