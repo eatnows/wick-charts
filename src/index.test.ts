@@ -511,5 +511,38 @@ describe('CinderChart', () => {
 
       expect(chart.getVisibleRange()).toEqual(before);
     });
+
+    it('cancels a pending scheduled render instead of letting it fire after teardown', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame');
+
+      fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 }); // schedules a render (new hover)
+      chart.destroy();
+
+      expect(cancelSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('touch + pinch interaction edge cases', () => {
+    it('clears a scrub-mode hover when a second finger lands to start a pinch', () => {
+      vi.useFakeTimers();
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
+      vi.advanceTimersByTime(400); // enter scrub mode
+      expect(chart.getHoveredCandle()).not.toBeNull();
+
+      // second finger lands — pinch takes over
+      onTouchStart(fakeTouchEvent([touchPoint(400, 100), touchPoint(500, 100)]));
+      onTouchMove(fakeTouchEvent([touchPoint(350, 100), touchPoint(550, 100)]));
+      onTouchEnd(fakeTouchEvent([touchPoint(350, 100)])); // one finger lifted
+      onTouchEnd(fakeTouchEvent([])); // the other lifted too
+
+      expect(chart.getHoveredCandle()).toBeNull();
+      vi.useRealTimers();
+    });
   });
 });

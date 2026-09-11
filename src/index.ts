@@ -56,6 +56,7 @@ export class CinderChart {
   private lastX = 0;
   private lastY = 0;
   private renderScheduled = false;
+  private pendingAnimationFrame: number | null = null;
   /** Distance (CSS px) between two touches on the previous touchmove —
    * `null` whenever fewer than two fingers are down. Compared frame to
    * frame (not against a fixed start value) so it composes naturally with
@@ -133,8 +134,9 @@ export class CinderChart {
   private scheduleRender(): void {
     if (this.renderScheduled) return;
     this.renderScheduled = true;
-    requestAnimationFrame(() => {
+    this.pendingAnimationFrame = requestAnimationFrame(() => {
       this.renderScheduled = false;
+      this.pendingAnimationFrame = null;
       this.render();
     });
   }
@@ -160,7 +162,10 @@ export class CinderChart {
    * — `null` if the axis is still auto-fitting to whatever's visible
    * (the default until the user first touches it vertically). */
   getPriceRangeOverride(): { min: number; max: number } | null {
-    return this.viewport.priceRangeOverride;
+    // A copy, not the live internal object — a caller mutating what they
+    // got back should never be able to corrupt the viewport's own state.
+    const range = this.viewport.priceRangeOverride;
+    return range ? { ...range } : null;
   }
 
   /** The candle currently under the cursor (crosshair/legend target), or
@@ -174,6 +179,10 @@ export class CinderChart {
    * leaves the canvas mid-drag) and won't be garbage-collected on its own. */
   destroy(): void {
     this.clearLongPressTimer();
+    if (this.pendingAnimationFrame !== null) {
+      cancelAnimationFrame(this.pendingAnimationFrame);
+      this.pendingAnimationFrame = null;
+    }
     const { canvas } = this;
     canvas.removeEventListener('mousedown', this.onMouseDown);
     canvas.removeEventListener('mousemove', this.onMouseMove);
@@ -291,8 +300,15 @@ export class CinderChart {
     if (e.touches.length === 2) {
       // A second finger landing takes over from whatever single-finger
       // gesture might have been in progress — including a pending
-      // long-press, which no longer makes sense once this is a pinch.
+      // long-press, or an already-active scrub, neither of which make
+      // sense once this becomes a pinch. Clearing the hover here (not
+      // just relying on the eventual touchend) matters because dragMode
+      // stops being 'scrub' the instant we set it to null two lines down.
       this.clearLongPressTimer();
+      if (this.hoverIndex !== null) {
+        this.hoverIndex = null;
+        this.scheduleRender();
+      }
       this.dragMode = null;
       this.pinchLastDistance = this.touchDistance(e.touches[0]!, e.touches[1]!);
       return;
@@ -384,7 +400,10 @@ export class CinderChart {
       // a mouse, which can keep hovering the last position, a lifted
       // finger isn't "still pointing" at anything, so the legend/crosshair
       // should disappear rather than stay pinned to wherever it last was.
-      if (this.dragMode === 'scrub' && this.hoverIndex !== null) {
+      // Unconditional on hoverIndex alone (not gated on dragMode === 'scrub')
+      // so a hover left over from a scrub-then-pinch sequence still clears
+      // here even though dragMode was already reset to null earlier.
+      if (this.hoverIndex !== null) {
         this.hoverIndex = null;
         this.scheduleRender();
       }
@@ -405,6 +424,7 @@ export class CinderChart {
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    if (e.deltaX === 0 && e.deltaY === 0) return; // e.g. a momentum-scroll's trailing zero-delta event
     const slotWidth = this.renderer.chartWidth / this.viewport.visibleCount;
     if (slotWidth <= 0) return;
 
