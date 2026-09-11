@@ -419,6 +419,85 @@ describe('CinderChart', () => {
     });
   });
 
+  describe('touch long-press scrub (hover substitute)', () => {
+    const LONG_PRESS_MS = 350; // must match the constant in index.ts
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('holding a finger still past the long-press duration inspects a candle instead of panning', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart } = chartTouchHandlers(chart);
+      const before = chart.getVisibleRange();
+
+      onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10);
+
+      expect(chart.getHoveredCandle()).not.toBeNull();
+      expect(chart.getVisibleRange()).toEqual(before); // never panned
+    });
+
+    it('moving the finger before the long-press fires cancels it and pans normally instead', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
+      const before = chart.getVisibleRange().startIndex;
+
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100)]));
+      onTouchMove(fakeTouchEvent([touchPoint(400, 100)])); // real drag, well past the tolerance
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10); // the (already-cancelled) timer must not fire late
+
+      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getVisibleRange().startIndex).toBeLessThan(before); // panned instead
+    });
+
+    it('moving the finger while in scrub mode scrubs between candles without panning', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10);
+      const rangeAfterHold = chart.getVisibleRange();
+      const firstHover = chart.getHoveredCandle();
+
+      onTouchMove(fakeTouchEvent([touchPoint(200, 100)])); // slide to inspect a different candle
+      expect(chart.getVisibleRange()).toEqual(rangeAfterHold); // still not panning
+      expect(chart.getHoveredCandle()).not.toBe(firstHover);
+    });
+
+    it('lifting the finger after scrubbing clears the hover, returning to the original state', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchEnd } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10);
+      expect(chart.getHoveredCandle()).not.toBeNull();
+
+      onTouchEnd(fakeTouchEvent([]));
+      expect(chart.getHoveredCandle()).toBeNull();
+    });
+
+    it('a quick tap released before the long-press duration never enters scrub mode', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchEnd } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
+      onTouchEnd(fakeTouchEvent([]));
+      vi.advanceTimersByTime(LONG_PRESS_MS + 10); // the cancelled timer must not fire after release
+
+      expect(chart.getHoveredCandle()).toBeNull();
+    });
+  });
+
   describe('destroy', () => {
     it('stops reacting to further input after destroy()', () => {
       const chart = new CinderChart(canvas);

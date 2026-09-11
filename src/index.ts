@@ -17,7 +17,7 @@ export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
 export { getCachedWasmModule, loadWasm } from './wasm.js';
 
-type DragMode = 'pan' | 'price-scale' | null;
+type DragMode = 'pan' | 'price-scale' | 'scrub' | null;
 type LoadDirection = 'before' | 'after';
 
 /** How many candles are visible by default when `setData` is called without
@@ -28,6 +28,16 @@ const DEFAULT_VISIBLE_CANDLES = 120;
 /** How close (in candles) the visible window has to get to either edge of
  * the loaded data before `setDataLoader`'s loader is asked for more. */
 const DEFAULT_LOAD_THRESHOLD = 20;
+
+/** How long a single finger has to stay down before a still-in-progress
+ * 'pan' touch switches to 'scrub' mode (touch has no hover, so this is its
+ * substitute — hold to inspect a candle instead of panning past it). */
+const LONG_PRESS_MS = 350;
+
+/** A finger moving more than this many CSS px from where it landed counts
+ * as a real drag, not a hold — cancels the pending long-press timer so a
+ * fast pan gesture never flips into scrub mid-motion. */
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 
 /**
  * Interactive candlestick chart: drag to pan, wheel to zoom, drag the
@@ -52,6 +62,11 @@ export class CinderChart {
    * the same incremental-delta style `applyPanDelta`/`applyPriceScaleDelta`
    * already use. */
   private pinchLastDistance: number | null = null;
+  /** Where the current single-finger touch landed — compared against the
+   * live position to tell a hold from a drag; see LONG_PRESS_MOVE_TOLERANCE_PX. */
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
   private loader: DataLoader | null = null;
   private loadThreshold = DEFAULT_LOAD_THRESHOLD;
@@ -158,6 +173,7 @@ export class CinderChart {
    * listener is on `window` (so drags don't get stuck if the cursor
    * leaves the canvas mid-drag) and won't be garbage-collected on its own. */
   destroy(): void {
+    this.clearLongPressTimer();
     const { canvas } = this;
     canvas.removeEventListener('mousedown', this.onMouseDown);
     canvas.removeEventListener('mousemove', this.onMouseMove);
@@ -274,7 +290,9 @@ export class CinderChart {
 
     if (e.touches.length === 2) {
       // A second finger landing takes over from whatever single-finger
-      // drag might have been in progress.
+      // gesture might have been in progress — including a pending
+      // long-press, which no longer makes sense once this is a pinch.
+      this.clearLongPressTimer();
       this.dragMode = null;
       this.pinchLastDistance = this.touchDistance(e.touches[0]!, e.touches[1]!);
       return;
@@ -286,7 +304,24 @@ export class CinderChart {
       this.dragMode = x >= this.renderer.chartWidth ? 'price-scale' : 'pan';
       this.lastX = touch.clientX;
       this.lastY = touch.clientY;
+      this.touchStartX = touch.clientX;
+      this.touchStartY = touch.clientY;
       this.ensurePriceRangeOverride();
+
+      // Touch has no hover, so holding a finger still is its substitute:
+      // if it's still a 'pan' candidate (not already moved into a real
+      // drag, not on the price-axis strip) when this fires, switch to
+      // inspecting the candle under the finger instead of panning.
+      if (this.dragMode === 'pan') {
+        this.clearLongPressTimer();
+        this.longPressTimer = setTimeout(() => {
+          this.longPressTimer = null;
+          if (this.dragMode === 'pan') {
+            this.dragMode = 'scrub';
+            this.updateHover({ clientX: this.lastX, clientY: this.lastY });
+          }
+        }, LONG_PRESS_MS);
+      }
     }
   };
 
@@ -316,20 +351,53 @@ export class CinderChart {
       return;
     }
 
-    if (e.touches.length === 1 && this.dragMode) {
-      const touch = e.touches[0]!;
-      if (this.dragMode === 'pan') {
-        this.applyPanDelta(touch.clientX, touch.clientY);
-      } else {
-        this.applyPriceScaleDelta(touch.clientY);
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0]!;
+
+    if (this.dragMode === 'pan') {
+      const movedDistance = Math.hypot(touch.clientX - this.touchStartX, touch.clientY - this.touchStartY);
+      if (movedDistance > LONG_PRESS_MOVE_TOLERANCE_PX) {
+        // A real drag, not a hold — the long-press timer (if still
+        // pending) would otherwise fire mid-drag and yank control away
+        // from panning.
+        this.clearLongPressTimer();
       }
+      this.applyPanDelta(touch.clientX, touch.clientY);
+      return;
+    }
+
+    if (this.dragMode === 'price-scale') {
+      this.applyPriceScaleDelta(touch.clientY);
+      return;
+    }
+
+    if (this.dragMode === 'scrub') {
+      this.updateHover(touch);
     }
   };
 
   private onTouchEnd = (e: TouchEvent): void => {
     if (e.touches.length < 2) this.pinchLastDistance = null;
-    if (e.touches.length === 0) this.dragMode = null;
+    if (e.touches.length === 0) {
+      this.clearLongPressTimer();
+      // Scrubbing has no persistent state after the finger lifts — unlike
+      // a mouse, which can keep hovering the last position, a lifted
+      // finger isn't "still pointing" at anything, so the legend/crosshair
+      // should disappear rather than stay pinned to wherever it last was.
+      if (this.dragMode === 'scrub' && this.hoverIndex !== null) {
+        this.hoverIndex = null;
+        this.scheduleRender();
+      }
+      this.dragMode = null;
+    }
   };
+
+  private clearLongPressTimer(): void {
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+  }
 
   private touchDistance(a: Touch, b: Touch): number {
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -357,8 +425,8 @@ export class CinderChart {
     this.scheduleRender();
   };
 
-  private updateHover(e: MouseEvent): void {
-    const { x } = this.cursorPosition(e);
+  private updateHover(point: { clientX: number; clientY: number }): void {
+    const { x } = this.cursorPosition(point);
     if (x >= this.renderer.chartWidth || this.sorted.length === 0) {
       if (this.hoverIndex !== null) {
         this.hoverIndex = null;
