@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>cinderchart demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif}
+  .wrap{display:flex;flex-direction:column;height:100%}
+  header{padding:14px 18px;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:16px;flex-shrink:0}
+  header h1{font-size:14px;margin:0;font-weight:600}
+  header p{font-size:12px;margin:0;color:#8b949e}
+  .hint{font-size:11.5px;color:#8b949e;padding:8px 18px;border-bottom:1px solid #21262d;flex-shrink:0}
+  .hint b{color:#c9d1d9}
+  #canvas-holder{flex:1;min-height:0;position:relative}
+  canvas{width:100%;height:100%;display:block;cursor:crosshair}
+  #load-indicator{
+    position:absolute;top:10px;right:76px;font-size:11px;color:#e0a83f;
+    background:#1b212b;border:1px solid #2b3240;border-radius:6px;padding:4px 9px;
+    opacity:0;transition:opacity .15s;pointer-events:none;
+  }
+  #load-indicator.visible{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>cinderchart</h1>
+    <p>동적 로딩 데모 — 초기 200개만 로드, 끝까지 팬하면 더 불러옴</p>
+  </header>
+  <div class="hint">
+    드래그: <b>차트 영역</b> = 좌우/상하 이동 · <b>오른쪽 가격축</b> = 세로 드래그로 스케일 조정 · 휠: 확대/축소(세로) · 좌우 스와이프: 팬 · 마우스오버: OHLC 정보
+  </div>
+  <div id="canvas-holder">
+    <canvas id="chart"></canvas>
+    <div id="load-indicator">불러오는 중…</div>
+  </div>
+</div>
+
+<script type="module">
+  import { CinderChart } from '../dist/index.js';
+
+  // Deterministic per-index generator (not a running random walk) so any
+  // index — past, present, or "future" — can be produced independently in
+  // either load direction without replaying state from a fixed start.
+  function seededRandom(seed) {
+    let s = seed >>> 0;
+    return () => {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+      return s / 0xffffffff;
+    };
+  }
+
+  const DAY_MS = 86400000;
+  const EPOCH = new Date('2024-01-01T00:00:00Z').getTime();
+
+  function candleAtIndex(i) {
+    const rand = seededRandom(1000 + i);
+    const base = 71000 + Math.sin(i / 40) * 4000 + Math.cos(i / 17) * 1500;
+    const open = base + (rand() - 0.5) * 400;
+    const close = Math.max(1000, open + (rand() - 0.5) * 1800);
+    const high = Math.max(open, close) + rand() * 500;
+    const low = Math.max(1, Math.min(open, close) - rand() * 500);
+    const volume = Math.round(50000 + rand() * 200000);
+    return { time: new Date(EPOCH + i * DAY_MS).toISOString(), open, high, low, close, volume };
+  }
+
+  function generateRange(fromIndex, toIndexInclusive) {
+    const out = [];
+    for (let i = fromIndex; i <= toIndexInclusive; i++) out.push(candleAtIndex(i));
+    return out;
+  }
+
+  // Initial window: only indices [300, 499] (200 candles) are "loaded."
+  // Panning toward either edge crosses the chart's load threshold and
+  // triggers the loader below.
+  const INITIAL_MIN = 300;
+  const INITIAL_MAX = 499;
+  const HISTORY_FLOOR = -1800; // 'before' loader returns [] past this — demonstrates the exhausted state
+  const FUTURE_CEILING = 700; // 'after' loader returns [] past this
+
+  let loadedMin = INITIAL_MIN;
+  let loadedMax = INITIAL_MAX;
+
+  const indicator = document.getElementById('load-indicator');
+  let pending = 0;
+  function setLoading(on) {
+    pending += on ? 1 : -1;
+    indicator.classList.toggle('visible', pending > 0);
+  }
+
+  async function loader({ direction, count }) {
+    setLoading(true);
+    await new Promise((resolve) => setTimeout(resolve, 250)); // simulate network latency
+    try {
+      if (direction === 'before') {
+        const to = loadedMin - 1;
+        const from = Math.max(HISTORY_FLOOR, loadedMin - count);
+        if (from > to) return [];
+        loadedMin = from;
+        return generateRange(from, to);
+      }
+      const from = loadedMax + 1;
+      const to = Math.min(FUTURE_CEILING, loadedMax + count);
+      if (from > to) return [];
+      loadedMax = to;
+      return generateRange(from, to);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const canvas = document.getElementById('chart');
+  const holder = document.getElementById('canvas-holder');
+
+  function resizeCanvas() {
+    const rect = holder.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+  }
+
+  resizeCanvas();
+  const chart = new CinderChart(canvas, { upColor: '#26a69a', downColor: '#ef5350' });
+  chart.setDataLoader(loader);
+  chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));
+  chart.render();
+
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+    chart.render();
+  });
+</script>
+</body>
+</html>
