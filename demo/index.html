@@ -106,7 +106,7 @@
   }
 
   resizeCanvas();
-  const chart = new CinderChart(canvas, { upColor: '#26a69a', downColor: '#ef5350' });
+  const chart = new CinderChart(canvas, { style: { upColor: '#26a69a', downColor: '#ef5350' } });
   chart.setDataLoader(loader, LOAD_THRESHOLD);
   chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));
   chart.render();

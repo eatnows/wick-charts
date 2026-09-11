@@ -27,8 +27,20 @@ export interface UnixMillis {
  */
 export type CinderTime = number | string | UnixMillis | { businessDay: BusinessDay };
 
-export interface Candle {
+/**
+ * The minimum shape every plotted point must have, regardless of chart
+ * type — a time to place it on the x-axis. `Candle` (OHLC) is one instance
+ * of this; a future line/area/bar series point is another. Everything in
+ * the engine that doesn't need to know *what* is plotted (pan/zoom, event
+ * handling, data loading, merging) is written against this shape, not
+ * against `Candle` — see `src/series/types.ts` for where the per-type
+ * behavior (drawing, value-range, legend text) actually lives.
+ */
+export interface SeriesPoint {
   time: CinderTime;
+}
+
+export interface Candle extends SeriesPoint {
   open: number;
   high: number;
   low: number;
@@ -37,10 +49,22 @@ export interface Candle {
 }
 
 export interface CinderChartOptions {
-  /** Background color of the canvas. Defaults to transparent. */
+  /**
+   * Which registered series type to render this chart as (see
+   * `registerSeries` in `src/series/registry.ts`). Defaults to
+   * `'candlestick'`, the only type built into the library today — adding a
+   * new one is a matter of implementing `SeriesDefinition` and registering
+   * it, without changing `CinderChart` or `ChartRenderer` at all.
+   */
+  type?: string;
+  /** Background color of the canvas. Defaults to transparent. Chart-wide
+   * (the renderer clears/fills the whole canvas with it), not part of any
+   * series's own style. */
   background?: string;
-  /** Candle body color for up (close >= open) bars. */
-  upColor?: string;
-  /** Candle body color for down (close < open) bars. */
-  downColor?: string;
+  /**
+   * Style overrides specific to the chosen `type` — shape depends on which
+   * series is active (candlestick's is `CandlestickStyle`). Merged over the
+   * series definition's `defaultStyle`.
+   */
+  style?: Record<string, unknown>;
 }

@@ -68,7 +68,7 @@ describe('CinderChart', () => {
       { time: 20, open: 3, high: 3, low: 3, close: 3 },
     ]);
     expect(chart.getCandleCount()).toBe(3);
-    expect(chart.getHoveredCandle()).toBeNull(); // nothing hovered yet, just sanity
+    expect(chart.getHoveredPoint()).toBeNull(); // nothing hovered yet, just sanity
   });
 
   it('defaults the visible window to the most recent DEFAULT_VISIBLE_CANDLES candles', () => {
@@ -222,24 +222,24 @@ describe('CinderChart', () => {
       const chart = new CinderChart(canvas);
       chart.setData(makeSeries(10));
       fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 });
-      expect(chart.getHoveredCandle()).not.toBeNull();
+      expect(chart.getHoveredPoint()).not.toBeNull();
     });
 
     it('clears the hover on mouseleave', () => {
       const chart = new CinderChart(canvas);
       chart.setData(makeSeries(10));
       fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 });
-      expect(chart.getHoveredCandle()).not.toBeNull();
+      expect(chart.getHoveredPoint()).not.toBeNull();
 
       fireMouse(canvas, 'mouseleave', {});
-      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getHoveredPoint()).toBeNull();
     });
 
     it('reports null hover when the cursor is over the price-axis strip', () => {
       const chart = new CinderChart(canvas);
       chart.setData(makeSeries(10));
       fireMouse(canvas, 'mousemove', { clientX: 770, clientY: 100 }); // inside the 64px price-axis strip
-      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getHoveredPoint()).toBeNull();
     });
   });
 
@@ -439,7 +439,7 @@ describe('CinderChart', () => {
       onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
       vi.advanceTimersByTime(LONG_PRESS_MS + 10);
 
-      expect(chart.getHoveredCandle()).not.toBeNull();
+      expect(chart.getHoveredPoint()).not.toBeNull();
       expect(chart.getVisibleRange()).toEqual(before); // never panned
     });
 
@@ -453,7 +453,7 @@ describe('CinderChart', () => {
       onTouchMove(fakeTouchEvent([touchPoint(400, 100)])); // real drag, well past the tolerance
       vi.advanceTimersByTime(LONG_PRESS_MS + 10); // the (already-cancelled) timer must not fire late
 
-      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getHoveredPoint()).toBeNull();
       expect(chart.getVisibleRange().startIndex).toBeLessThan(before); // panned instead
     });
 
@@ -465,11 +465,11 @@ describe('CinderChart', () => {
       onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
       vi.advanceTimersByTime(LONG_PRESS_MS + 10);
       const rangeAfterHold = chart.getVisibleRange();
-      const firstHover = chart.getHoveredCandle();
+      const firstHover = chart.getHoveredPoint();
 
       onTouchMove(fakeTouchEvent([touchPoint(200, 100)])); // slide to inspect a different candle
       expect(chart.getVisibleRange()).toEqual(rangeAfterHold); // still not panning
-      expect(chart.getHoveredCandle()).not.toBe(firstHover);
+      expect(chart.getHoveredPoint()).not.toBe(firstHover);
     });
 
     it('lifting the finger after scrubbing clears the hover, returning to the original state', () => {
@@ -479,10 +479,10 @@ describe('CinderChart', () => {
 
       onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
       vi.advanceTimersByTime(LONG_PRESS_MS + 10);
-      expect(chart.getHoveredCandle()).not.toBeNull();
+      expect(chart.getHoveredPoint()).not.toBeNull();
 
       onTouchEnd(fakeTouchEvent([]));
-      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getHoveredPoint()).toBeNull();
     });
 
     it('a quick tap released before the long-press duration never enters scrub mode', () => {
@@ -494,7 +494,7 @@ describe('CinderChart', () => {
       onTouchEnd(fakeTouchEvent([]));
       vi.advanceTimersByTime(LONG_PRESS_MS + 10); // the cancelled timer must not fire after release
 
-      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getHoveredPoint()).toBeNull();
     });
   });
 
@@ -533,7 +533,7 @@ describe('CinderChart', () => {
 
       onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
       vi.advanceTimersByTime(400); // enter scrub mode
-      expect(chart.getHoveredCandle()).not.toBeNull();
+      expect(chart.getHoveredPoint()).not.toBeNull();
 
       // second finger lands — pinch takes over
       onTouchStart(fakeTouchEvent([touchPoint(400, 100), touchPoint(500, 100)]));
@@ -541,8 +541,67 @@ describe('CinderChart', () => {
       onTouchEnd(fakeTouchEvent([touchPoint(350, 100)])); // one finger lifted
       onTouchEnd(fakeTouchEvent([])); // the other lifted too
 
-      expect(chart.getHoveredCandle()).toBeNull();
+      expect(chart.getHoveredPoint()).toBeNull();
       vi.useRealTimers();
+    });
+  });
+
+  describe('series type dispatch', () => {
+    it('defaults to the built-in candlestick series when type is omitted', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      expect(() => chart.render()).not.toThrow();
+    });
+
+    it('throws a clear error for an unregistered type', () => {
+      expect(() => new CinderChart(canvas, { type: 'not-a-real-series' })).toThrow(/unknown series type/);
+    });
+  });
+
+  describe('plugins', () => {
+    it('draws a registered plugin on top of the series every frame', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      const draw = vi.fn();
+
+      chart.addPlugin({ draw });
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(1);
+
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops drawing a plugin once removed', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      const draw = vi.fn();
+      const plugin = { draw };
+
+      chart.addPlugin(plugin);
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(1);
+
+      chart.removePlugin(plugin);
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(1); // no additional call
+    });
+
+    it('gives the plugin pixel-space geometry for the current frame', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      let seenApi: { chartWidth: number; chartHeight: number } | undefined;
+
+      chart.addPlugin({
+        draw: (api) => {
+          seenApi = api;
+        },
+      });
+      chart.render();
+
+      expect(seenApi).toBeDefined();
+      expect(seenApi!.chartWidth).toBeGreaterThan(0);
+      expect(seenApi!.chartHeight).toBeGreaterThan(0);
     });
   });
 });

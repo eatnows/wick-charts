@@ -1,17 +1,30 @@
 import type { DataLoader } from './dataSource.js';
-import { mergeCandles } from './mergeCandles.js';
-import { autoFitPriceRange } from './priceRange.js';
-import { CandleRenderer } from './renderer.js';
+import { mergeSeriesPoints } from './mergeSeries.js';
+import { ChartRenderer } from './renderer.js';
+import { getSeries } from './series/registry.js';
+// Registers the 'candlestick' type as a side effect — see
+// src/series/candlestick.ts and src/series/registry.ts. A new series type
+// gets the same treatment: implement SeriesDefinition, import it here (or
+// have the consuming app import it directly before constructing a chart of
+// that type), and `type: '<its key>'` becomes usable with no other change
+// to this file.
+import './series/candlestick.js';
 import { toUnixSeconds } from './time.js';
 import { Viewport } from './viewport.js';
 import { loadWasm } from './wasm.js';
 import { importRealWasm } from './wasmImporter.js';
-import type { Candle, CinderChartOptions } from './types.js';
+import type { ChartPlugin } from './plugins/types.js';
+import type { SeriesDefinition } from './series/types.js';
+import type { Candle, CinderChartOptions, SeriesPoint } from './types.js';
 
-export type { BusinessDay, Candle, CinderChartOptions, CinderTime, UnixMillis } from './types.js';
+export type { BusinessDay, Candle, CinderChartOptions, CinderTime, SeriesPoint, UnixMillis } from './types.js';
 export type { DataLoader, DataRequest } from './dataSource.js';
+export type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
 export type { Scale } from './hybridScale.js';
-export { mergeCandles } from './mergeCandles.js';
+export { mergeSeriesPoints } from './mergeSeries.js';
+export { registerSeries, getSeries } from './series/registry.js';
+export type { SeriesDefinition, SeriesDrawContext, ValueRange } from './series/types.js';
+export type { CandlestickStyle } from './series/candlestick.js';
 export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
@@ -40,17 +53,23 @@ const LONG_PRESS_MS = 350;
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 
 /**
- * Interactive candlestick chart: drag to pan, wheel to zoom, drag the
- * price-axis strip to rescale it, hover a candle for an OHLC legend.
- * Construct once per canvas; call `destroy()` when done with it (unmount)
- * to remove the window-level mouseup listener.
+ * Interactive chart: drag to pan, wheel to zoom, drag the price-axis strip
+ * to rescale it, hover a point for a legend. What gets plotted (candles
+ * today; a future line/area/bar series) is decided entirely by
+ * `options.type` and the `SeriesDefinition` registered under it — this
+ * class only owns generic engine concerns (viewport math, mouse/touch/wheel
+ * handling, on-demand data loading, render scheduling) and never touches a
+ * point's fields directly. Construct once per canvas; call `destroy()`
+ * when done with it (unmount) to remove the window-level mouseup listener.
  */
-export class CinderChart {
-  private renderer: CandleRenderer;
-  private sorted: Candle[] = [];
+export class CinderChart<TPoint extends SeriesPoint = Candle> {
+  private renderer: ChartRenderer<TPoint>;
+  private seriesDefinition: SeriesDefinition<TPoint, unknown>;
+  private sorted: TPoint[] = [];
   private times: number[] = [];
   private viewport: Viewport;
   private hoverIndex: number | null = null;
+  private plugins: ChartPlugin[] = [];
 
   private dragMode: DragMode = null;
   private lastX = 0;
@@ -69,7 +88,7 @@ export class CinderChart {
   private touchStartY = 0;
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private loader: DataLoader | null = null;
+  private loader: DataLoader<TPoint> | null = null;
   private loadThreshold = DEFAULT_LOAD_THRESHOLD;
   private loading: Record<LoadDirection, boolean> = { before: false, after: false };
   /** Set once a loader for a direction returns empty — stops re-asking at
@@ -81,7 +100,8 @@ export class CinderChart {
     private canvas: HTMLCanvasElement,
     options?: CinderChartOptions,
   ) {
-    this.renderer = new CandleRenderer(canvas, options);
+    this.seriesDefinition = getSeries<TPoint, unknown>(options?.type ?? 'candlestick');
+    this.renderer = new ChartRenderer(canvas, this.seriesDefinition, options);
     this.viewport = new Viewport(0);
     // Without this, a touch drag on the canvas also scrolls/zooms the page
     // underneath it — the browser's native touch gestures and this class's
@@ -94,9 +114,9 @@ export class CinderChart {
     void loadWasm(importRealWasm);
   }
 
-  setData(candles: Candle[]): this {
-    this.sorted = [...candles].sort((a, b) => toUnixSeconds(a.time) - toUnixSeconds(b.time));
-    this.times = this.sorted.map((c) => toUnixSeconds(c.time));
+  setData(points: TPoint[]): this {
+    this.sorted = [...points].sort((a, b) => toUnixSeconds(a.time) - toUnixSeconds(b.time));
+    this.times = this.sorted.map((p) => toUnixSeconds(p.time));
     this.viewport = new Viewport(this.sorted.length, DEFAULT_VISIBLE_CANDLES);
     this.hoverIndex = null;
     this.exhausted = { before: false, after: false };
@@ -104,15 +124,32 @@ export class CinderChart {
   }
 
   /**
-   * Registers a callback the chart asks for more candles when the visible
-   * window gets within `threshold` candles of either edge of what's
+   * Registers a callback the chart asks for more points when the visible
+   * window gets within `threshold` points of either edge of what's
    * currently loaded. The chart never fetches on its own — it only decides
    * *when* more data is needed and merges what the loader returns; the
    * loader owns *how* (REST call, cache, websocket replay, whatever).
    */
-  setDataLoader(loader: DataLoader, threshold: number = DEFAULT_LOAD_THRESHOLD): this {
+  setDataLoader(loader: DataLoader<TPoint>, threshold: number = DEFAULT_LOAD_THRESHOLD): this {
     this.loader = loader;
     this.loadThreshold = threshold;
+    return this;
+  }
+
+  /** Registers a plugin (marker, annotation, drawing tool, ...) drawn on
+   * top of the chart every frame after the series and axes — see
+   * `src/plugins/types.ts`. Adding overlay features this way, rather than
+   * by extending `CinderChart` itself, is what keeps the core closed to
+   * modification: a marker implementation never needs to touch this file. */
+  addPlugin(plugin: ChartPlugin): this {
+    this.plugins.push(plugin);
+    this.scheduleRender();
+    return this;
+  }
+
+  removePlugin(plugin: ChartPlugin): this {
+    this.plugins = this.plugins.filter((p) => p !== plugin);
+    this.scheduleRender();
     return this;
   }
 
@@ -122,6 +159,7 @@ export class CinderChart {
       times: this.times,
       viewport: this.viewport,
       hoverIndex: this.hoverIndex,
+      plugins: this.plugins,
     });
     this.maybeLoadMore();
   }
@@ -168,9 +206,9 @@ export class CinderChart {
     return range ? { ...range } : null;
   }
 
-  /** The candle currently under the cursor (crosshair/legend target), or
+  /** The point currently under the cursor (crosshair/legend target), or
    * `null` when nothing is hovered. */
-  getHoveredCandle(): Candle | null {
+  getHoveredPoint(): TPoint | null {
     return this.hoverIndex === null ? null : (this.sorted[this.hoverIndex] ?? null);
   }
 
@@ -491,7 +529,7 @@ export class CinderChart {
 
     this.loading[direction] = true;
     Promise.resolve(loader({ direction, boundary, count: this.loadThreshold * 2 }))
-      .then((newCandles) => this.applyLoadedCandles(direction, newCandles))
+      .then((newPoints) => this.applyLoadedPoints(direction, newPoints))
       .catch(() => {
         // A failed fetch just means we try again next time the viewport
         // re-crosses the threshold — not `exhausted`, since the data may
@@ -502,18 +540,18 @@ export class CinderChart {
       });
   }
 
-  private applyLoadedCandles(direction: LoadDirection, newCandles: Candle[]): void {
-    if (newCandles.length === 0) {
+  private applyLoadedPoints(direction: LoadDirection, newPoints: TPoint[]): void {
+    if (newPoints.length === 0) {
       this.exhausted[direction] = true;
       return;
     }
 
     const previousCount = this.sorted.length;
-    this.sorted = mergeCandles(this.sorted, newCandles);
-    this.times = this.sorted.map((c) => toUnixSeconds(c.time));
+    this.sorted = mergeSeriesPoints(this.sorted, newPoints);
+    this.times = this.sorted.map((p) => toUnixSeconds(p.time));
 
     if (direction === 'before') {
-      // Every candle prepended shifts every existing index forward by the
+      // Every point prepended shifts every existing index forward by the
       // same amount — without this the visible window would visually jump
       // to show older data instead of staying put once the fetch lands.
       const prepended = this.sorted.length - previousCount;
@@ -523,16 +561,18 @@ export class CinderChart {
     this.render();
   }
 
-  /** Switches the price axis to manual mode if it hasn't been already,
-   * seeding it from the current auto-fit range so the first pixel of a
-   * drag doesn't jump. No-op on subsequent calls (already manual). */
+  /** Switches the price/value axis to manual mode if it hasn't been
+   * already, seeding it from the current auto-fit range so the first pixel
+   * of a drag doesn't jump. No-op on subsequent calls (already manual). */
   private ensurePriceRangeOverride(): void {
     if (this.viewport.priceRangeOverride || this.sorted.length === 0) return;
     const startIdx = Math.max(0, Math.floor(this.viewport.startIndex));
     const endIdx = Math.min(this.sorted.length, Math.ceil(this.viewport.endIndex));
     const visible = this.sorted.slice(startIdx, endIdx);
     if (visible.length === 0) return;
-    this.viewport.setPriceRangeOverride(autoFitPriceRange(visible, this.viewport.priceScaleFactor));
+    this.viewport.setPriceRangeOverride(
+      this.seriesDefinition.getValueRange(visible, this.viewport.priceScaleFactor),
+    );
   }
 
   /** Position in canvas backing-store pixels, accounting for the gap

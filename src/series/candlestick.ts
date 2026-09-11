@@ -1,0 +1,79 @@
+import { fitRange } from '../priceRange.js';
+import { registerSeries } from './registry.js';
+import type { Candle } from '../types.js';
+import type { SeriesDefinition, SeriesDrawContext, ValueRange } from './types.js';
+
+export interface CandlestickStyle {
+  /** Candle body/wick color for up (close >= open) bars. */
+  upColor: string;
+  /** Candle body/wick color for down (close < open) bars. */
+  downColor: string;
+}
+
+const DEFAULT_STYLE: CandlestickStyle = {
+  upColor: '#26a69a',
+  downColor: '#ef5350',
+};
+
+function getValueRange(visible: Candle[], scaleFactor: number): ValueRange {
+  const rawMin = Math.min(...visible.map((c) => c.low));
+  const rawMax = Math.max(...visible.map((c) => c.high));
+  return fitRange(rawMin, rawMax, scaleFactor);
+}
+
+function draw(context: SeriesDrawContext<Candle>, style: CandlestickStyle): void {
+  const { ctx, visible, startIndex, xForIndex, slotWidth, yScale } = context;
+  const bodyWidth = Math.max(1, slotWidth * 0.6);
+
+  // Batched through mapMany (one call per array) rather than four map()
+  // calls per candle in the loop below — the batch is what lets the WASM
+  // path pay the JS<->WASM boundary cost once per frame instead of once
+  // per point.
+  const yHighs = yScale.mapMany(visible.map((c) => c.high));
+  const yLows = yScale.mapMany(visible.map((c) => c.low));
+  const yOpens = yScale.mapMany(visible.map((c) => c.open));
+  const yCloses = yScale.mapMany(visible.map((c) => c.close));
+
+  visible.forEach((candle, i) => {
+    const x = xForIndex(startIndex + i);
+    const isUp = candle.close >= candle.open;
+    ctx.strokeStyle = ctx.fillStyle = isUp ? style.upColor : style.downColor;
+
+    ctx.beginPath();
+    ctx.moveTo(x, yHighs[i]!);
+    ctx.lineTo(x, yLows[i]!);
+    ctx.stroke();
+
+    const yOpen = yOpens[i]!;
+    const yClose = yCloses[i]!;
+    const top = Math.min(yOpen, yClose);
+    const bodyHeight = Math.max(1, Math.abs(yClose - yOpen));
+    ctx.fillRect(x - bodyWidth / 2, top, bodyWidth, bodyHeight);
+  });
+}
+
+function formatLegend(candle: Candle): string[] {
+  const parts = [
+    `O ${candle.open.toLocaleString('en-US')}`,
+    `H ${candle.high.toLocaleString('en-US')}`,
+    `L ${candle.low.toLocaleString('en-US')}`,
+    `C ${candle.close.toLocaleString('en-US')}`,
+  ];
+  if (candle.volume !== undefined) {
+    parts.push(`Vol ${candle.volume.toLocaleString('en-US')}`);
+  }
+  return parts;
+}
+
+export const candlestickSeries: SeriesDefinition<Candle, CandlestickStyle> = {
+  type: 'candlestick',
+  defaultStyle: DEFAULT_STYLE,
+  getValueRange,
+  draw,
+  formatLegend,
+};
+
+// Registered as a module-level side effect so importing this file (which
+// src/index.ts always does) is enough to make 'candlestick' available —
+// callers never register the built-in type themselves.
+registerSeries(candlestickSeries);
