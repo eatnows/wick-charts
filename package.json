@@ -18,6 +18,7 @@
     "check:rust": "cargo check --target wasm32-unknown-unknown -p cinderchart-core"
   },
   "devDependencies": {
+    "jsdom": "^30.0.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

@@ -99,6 +99,36 @@ export class CinderChart {
     this.maybeLoadMore();
   }
 
+  /** How many candles are currently loaded (not just visible) — grows as
+   * `setDataLoader`'s loader supplies more history. */
+  getCandleCount(): number {
+    return this.sorted.length;
+  }
+
+  /** The currently visible window, in candle indices into the full loaded
+   * series. Useful for building UI around the chart (a minimap, a "jump to
+   * latest" button) without reaching into private state. */
+  getVisibleRange(): { startIndex: number; endIndex: number; visibleCount: number } {
+    return {
+      startIndex: this.viewport.startIndex,
+      endIndex: this.viewport.endIndex,
+      visibleCount: this.viewport.visibleCount,
+    };
+  }
+
+  /** The price axis's manual range once the user has dragged or scaled it
+   * — `null` if the axis is still auto-fitting to whatever's visible
+   * (the default until the user first touches it vertically). */
+  getPriceRangeOverride(): { min: number; max: number } | null {
+    return this.viewport.priceRangeOverride;
+  }
+
+  /** The candle currently under the cursor (crosshair/legend target), or
+   * `null` when nothing is hovered. */
+  getHoveredCandle(): Candle | null {
+    return this.hoverIndex === null ? null : (this.sorted[this.hoverIndex] ?? null);
+  }
+
   /** Removes all attached listeners. Call on unmount — the mouseup
    * listener is on `window` (so drags don't get stuck if the cursor
    * leaves the canvas mid-drag) and won't be garbage-collected on its own. */
