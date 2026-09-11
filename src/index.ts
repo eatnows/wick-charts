@@ -45,6 +45,7 @@ export class CinderChart {
   private dragMode: DragMode = null;
   private lastX = 0;
   private lastY = 0;
+  private renderScheduled = false;
 
   private loader: DataLoader | null = null;
   private loadThreshold = DEFAULT_LOAD_THRESHOLD;
@@ -97,6 +98,20 @@ export class CinderChart {
       hoverIndex: this.hoverIndex,
     });
     this.maybeLoadMore();
+  }
+
+  /** Coalesces render() calls into at most one per animation frame. Mouse
+   * events (drag, wheel) can fire far faster than the display refreshes —
+   * calling render() directly from each one redraws the full canvas once
+   * per event instead of once per frame, which is what actually causes
+   * dragging to feel janky, not anything data-loading does. */
+  private scheduleRender(): void {
+    if (this.renderScheduled) return;
+    this.renderScheduled = true;
+    requestAnimationFrame(() => {
+      this.renderScheduled = false;
+      this.render();
+    });
   }
 
   /** How many candles are currently loaded (not just visible) — grows as
@@ -193,7 +208,7 @@ export class CinderChart {
         this.viewport.panPriceRange(deltaYDevice * pricePerPixel);
       }
 
-      this.render();
+      this.scheduleRender();
       return;
     }
 
@@ -203,7 +218,7 @@ export class CinderChart {
       // Dragging the price axis down widens the visible price range
       // (candles shrink); dragging up narrows it (candles grow).
       this.viewport.scalePriceRange(Math.pow(1.006, deltaY));
-      this.render();
+      this.scheduleRender();
       return;
     }
 
@@ -218,7 +233,7 @@ export class CinderChart {
     this.dragMode = null;
     if (this.hoverIndex !== null) {
       this.hoverIndex = null;
-      this.render();
+      this.scheduleRender();
     }
   };
 
@@ -233,7 +248,7 @@ export class CinderChart {
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       const deltaXDevice = e.deltaX * this.devicePixelScaleX();
       this.viewport.pan(deltaXDevice / slotWidth, this.sorted.length);
-      this.render();
+      this.scheduleRender();
       return;
     }
 
@@ -241,7 +256,7 @@ export class CinderChart {
     const anchorIndex = this.viewport.startIndex + x / slotWidth;
     const factor = e.deltaY > 0 ? 1.1 : 1 / 1.1; // scroll down = zoom out
     this.viewport.zoom(factor, anchorIndex, this.sorted.length);
-    this.render();
+    this.scheduleRender();
   };
 
   private updateHover(e: MouseEvent): void {
@@ -249,7 +264,7 @@ export class CinderChart {
     if (x >= this.renderer.chartWidth || this.sorted.length === 0) {
       if (this.hoverIndex !== null) {
         this.hoverIndex = null;
-        this.render();
+        this.scheduleRender();
       }
       return;
     }
@@ -262,7 +277,7 @@ export class CinderChart {
 
     if (nextHover !== this.hoverIndex) {
       this.hoverIndex = nextHover;
-      this.render();
+      this.scheduleRender();
     }
   }
 
