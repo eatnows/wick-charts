@@ -20,7 +20,6 @@ function fakeModule(): WasmModule {
       }
       free() {}
     } as unknown as WasmModule['Scale'],
-    sma: vi.fn(),
   };
 }
 

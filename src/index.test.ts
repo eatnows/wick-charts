@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CinderChart, createCandlestickChart, createMovingAveragePlugin } from './index';
+import { CinderChart, createCandlestickChart } from './index';
 import { createTestCanvas } from './testHelpers';
 import { resetWasmForTesting } from './wasm';
 import type { Candle } from './types';
@@ -564,20 +564,6 @@ describe('CinderChart', () => {
       chart.setData(makeSeries(10));
       expect(() => chart.render()).not.toThrow();
       expect(chart.getPointCount()).toBe(10);
-    });
-  });
-
-  describe('createMovingAveragePlugin (end-to-end)', () => {
-    it('draws through a real chart without throwing, and its output is removable', () => {
-      const chart = createCandlestickChart(canvas);
-      chart.setData(makeSeries(50));
-      const plugin = createMovingAveragePlugin({ period: 20 });
-
-      chart.addPlugin(plugin);
-      expect(() => chart.render()).not.toThrow();
-
-      chart.removePlugin(plugin);
-      expect(() => chart.render()).not.toThrow();
     });
   });
 

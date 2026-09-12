@@ -28,7 +28,6 @@ function fakeWasmModule(): WasmModule & { freeSpy: ReturnType<typeof vi.fn> } {
   return {
     default: vi.fn(async () => undefined),
     Scale: ScaleCtor as unknown as WasmModule['Scale'],
-    sma: vi.fn(),
     freeSpy,
   };
 }

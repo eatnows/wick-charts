@@ -158,32 +158,12 @@ chart.addPlugin({
 ```
 
 Only call `xForIndex`/`yForValue` synchronously inside `draw()` — see "Plugins" below for why.
-`removePlugin()` takes the same object back out.
-
-Built-in indicator overlays ship as examples of real (not toy) plugins — each its own module
-under `src/indicators/`, each independently configurable, and any number of instances (with
-any settings) can be added at once:
-
-```ts
-import { createMovingAveragePlugin, createBollingerBandsPlugin } from 'cinderchart';
-
-chart.addPlugin(createMovingAveragePlugin({ period: 20 })); // defaults: 20-period close SMA
-chart.addPlugin(createBollingerBandsPlugin({ period: 20, stdDevMultiplier: 2 }));
-
-// nothing stops adding a second, differently-configured instance of the same indicator
-chart.addPlugin(createMovingAveragePlugin({ period: 50, color: '#5b9bd5' }));
-```
-
-`createMovingAveragePlugin`'s `period`, `color`, `lineWidth`, and `accessor` (which candle
-field to average — defaults to `close`) are all optional overrides.
-`createBollingerBandsPlugin` adds `stdDevMultiplier` (how many standard deviations the bands
-sit from the middle line — defaults to 2), separate `middleColor`/`bandColor`/`fillColor`,
-and `fillOpacity` for the shaded area between the bands. Both compute across the full loaded
-series rather than just what's currently visible — see "Plugins" below for why that matters.
-
-Adding another indicator (RSI, MACD, ...) means writing one more file next to these two, with
-its own options interface — nothing about the plugin system itself needs to change, and
-existing indicator instances are unaffected.
+`removePlugin()` takes the same object back out. `allPoints` (the full loaded series, not
+just what's visible) is there for exactly this kind of overlay: a moving average or any other
+windowed calculation needs `period - 1` points of history *before* the visible window to be
+accurate at its left edge. `demo/index.html` has a complete worked example (a moving average
+built entirely in the demo's own code, period and color included) — see "Indicators" below
+for why that lives in the demo and not in the library itself.
 
 ### Cleanup
 
@@ -193,9 +173,10 @@ wouldn't clean up on its own.
 
 ## Architecture
 
-- **`crates/cinderchart-core`** (Rust → WASM): owns numeric hot paths — domain→pixel
-  scaling and indicator math (moving averages, etc.) — where avoiding JS interpreter
-  overhead over large series actually shows up in a profile.
+- **`crates/cinderchart-core`** (Rust → WASM): owns the one numeric hot path that's actually
+  the charting engine's own — domain→pixel scaling over large series, where avoiding JS
+  interpreter overhead shows up in a profile. Deliberately not indicator math; see
+  "Indicators" below.
 - **`src/`** (TypeScript): the public API and the Canvas2D renderer.
   - `CinderChart` owns the canvas, event wiring (pan/zoom/price-axis drag/hover), on-demand
     data loading, and the render loop. None of it knows what's actually being plotted — see
@@ -264,37 +245,24 @@ above the `WASM_SCALE_THRESHOLD` point count, `yForValue` closes over a WASM-bac
 that's freed the moment `draw()` returns, and calling it later throws rather than touching
 freed memory.
 
-`src/indicators/` holds the concrete plugins built this way — kept separate from
-`src/plugins/types.ts`'s generic extension-point contract so "what a plugin can do" and
-"what indicators actually exist" don't live in the same file. Each indicator is one module
-exporting a `create<Name>Plugin(options)` factory and its own `<Name>PluginOptions` type,
-independent of every other indicator's option shape (same reasoning as `create<Name>Chart`
-per series type, just one layer up):
+### Indicators (moving averages, Bollinger Bands, ...): deliberately not included
 
-- `movingAverage.ts`'s `createMovingAveragePlugin` — a simple moving average over closing
-  price (or any other candle field via `accessor`).
-- `bollingerBands.ts`'s `createBollingerBandsPlugin` — a middle SMA plus upper/lower bands
-  `stdDevMultiplier` standard deviations away, with the area between them filled. Reuses
-  `computeSma` for the middle band; `rollingStdDev` (local to that file) computes the bands
-  around it, sharing `computeSma`'s exact warm-up convention rather than deriving its own.
-- `runs.ts`'s `forEachValidRun` — walks a range and calls back once per contiguous run of
-  "valid" (non-warm-up) indices. Both indicators above need this: a line can't be drawn
-  straight through a NaN gap, and Bollinger Bands' fill needs whole valid runs to build a
-  closed polygon from, not just individual points.
+cinderchart ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
+and nothing built on top of it. This was a real decision, not an oversight — charting
+libraries generally land somewhere on a spectrum: some ship no indicators at all, only a
+generic primitive/plugin API plus docs on building your own, leaving actual indicators to a
+community ecosystem; some bundle dozens directly into the core with a registration escape
+hatch for custom ones; some ship official indicators the vendor maintains, but as separate
+opt-in modules on top of a public extension class, so a consumer who never touches indicators
+never pays for them; and some have no indicator concept at all, treating an indicator as
+nothing more than an ordinary dataset the application computes and plots itself.
 
-Both indicators read straight off `allPoints` rather than being handed the series
-separately, which is *why* `PluginRenderApi` carries the full loaded array and not just the
-visible one: a `period`-window calculation needs `period - 1` points of history *before* the
-visible window to be accurate at its left edge, and the alternative (a plugin tracking the
-chart's data independently) would break the moment `setDataLoader` extends it. The averaging
-itself goes through `src/indicators/sma.ts`'s `computeSma` — JS below `WASM_SMA_THRESHOLD`
-points, the Rust crate's `sma` export above it, the same hybrid dispatch `hybridScale.ts`
-uses for coordinate scaling.
-
-Adding a further indicator (RSI, MACD, ...) is: one new file next to these three implementing
-`ChartPlugin<Candle>`, exporting its own options type and `create<Name>Plugin` factory. No
-change to `ChartPlugin`, `PluginRenderApi`, `CinderChart`, or `ChartRenderer` — the extension
-point is already exactly what these two needed.
+cinderchart follows the first pattern: indicator math has too many real conventions (SMA vs.
+EMA, population vs. sample standard deviation, Wilder's smoothing for RSI, ...) for a charting
+engine to pick one and call it correct for everyone, and every one bundled is one more thing
+this library has to maintain forever. `demo/index.html` has a from-scratch moving-average
+`ChartPlugin` as a worked example of what building one looks like — period and color included,
+entirely in application code, not imported from the library.
 
 ```bash
 # TypeScript
@@ -320,13 +288,10 @@ state — and on-demand history loading via `setDataLoader`. Per-candle volume b
 the bottom fifth of the chart when a candle has `volume`, and are entirely omitted (nothing
 drawn, nothing reserved) for data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
-it — the moving-average overlay's own average (`createMovingAveragePlugin`) hybridizes the
-same way once the series is long enough; Bollinger Bands' standard deviation
-(`createBollingerBandsPlugin`) is JS-only so far. Candlestick is the only registered series
-type so far; the plugin extension point has two concrete indicator overlays (moving average,
-Bollinger Bands) but no marker or annotation plugin yet. No multi-pane indicators yet (volume
-and both overlays share the candlestick pane rather than getting their own). Not published
-to npm.
+it. Candlestick is the only registered series type so far; the plugin extension point has no
+built-in users (see "Indicators" above for why) beyond `demo/index.html`'s example. No
+multi-pane support yet (volume shares the candlestick pane rather than getting its own). Not
+published to npm.
 
 ## License
 

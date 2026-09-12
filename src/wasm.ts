@@ -1,6 +1,6 @@
 /** Shape of the compiled cinderchart-core WASM module as exposed by its
  * wasm-bindgen bindings: a `default` init function plus the same `Scale`
- * class and `sma` function the Rust crate defines. */
+ * class the Rust crate defines. */
 export interface WasmModule {
   default: (input?: unknown) => Promise<unknown>;
   Scale: new (domainMin: number, domainMax: number, rangeMin: number, rangeMax: number) => {
@@ -8,7 +8,6 @@ export interface WasmModule {
     map_many(values: Float64Array): Float64Array;
     free(): void;
   };
-  sma: (closes: Float64Array, period: number) => Float64Array;
 }
 
 export type WasmImporter = () => Promise<WasmModule>;

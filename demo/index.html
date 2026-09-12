@@ -25,7 +25,8 @@
     Drag: <b>chart area</b> pans/tilts the price range · <b>right price axis</b> scales it vertically ·
     scroll (vertical): zoom · trackpad swipe / shift+scroll: pan · hover: OHLC info + axis labels ·
     touch: one finger pans, two-finger pinch zooms, hold still to inspect a candle ·
-    amber line: 20-period moving average · violet band: Bollinger Bands (20, 2σ)
+    amber line: a 20-period moving average — built entirely in this demo's own code via
+    <code>addPlugin</code>, not shipped by the library (see "Indicators" in the README)
   </div>
   <div id="canvas-holder">
     <canvas id="chart"></canvas>
@@ -33,7 +34,50 @@
 </div>
 
 <script type="module">
-  import { CinderChart, createMovingAveragePlugin, createBollingerBandsPlugin } from '../dist/index.js';
+  import { CinderChart } from '../dist/index.js';
+
+  // cinderchart ships no indicators of its own (see the README's
+  // "Indicators" note) — this is a worked example of building one as a
+  // ChartPlugin in application code, the same way any consuming app would.
+  // period/color are just local constants here; a real app would expose
+  // them however it likes (a factory function, a settings panel, ...).
+  function movingAveragePlugin(period, color) {
+    return {
+      draw({ ctx, allPoints, visibleStartIndex, visibleEndIndex, xForIndex, yForValue }) {
+        if (allPoints.length === 0) return;
+
+        // Simple moving average with a NaN warm-up region, computed over
+        // the full loaded series (not just what's visible) so the line is
+        // accurate from the very first on-screen candle.
+        const closes = allPoints.map((c) => c.close);
+        const sma = closes.map((_, i) => {
+          if (i + 1 < period) return NaN;
+          let sum = 0;
+          for (let j = i - period + 1; j <= i; j++) sum += closes[j];
+          return sum / period;
+        });
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let drawing = false;
+        for (let i = visibleStartIndex; i < visibleEndIndex; i++) {
+          if (Number.isNaN(sma[i])) {
+            drawing = false;
+            continue;
+          }
+          const x = xForIndex(i);
+          const y = yForValue(sma[i]);
+          if (drawing) ctx.lineTo(x, y);
+          else {
+            ctx.moveTo(x, y);
+            drawing = true;
+          }
+        }
+        ctx.stroke();
+      },
+    };
+  }
 
   // Deterministic per-index generator (not a running random walk) so any
   // index — past, present, or "future" — can be produced independently in
@@ -109,8 +153,7 @@
   resizeCanvas();
   const chart = new CinderChart(canvas, { style: { upColor: '#26a69a', downColor: '#ef5350' } });
   chart.setDataLoader(loader, LOAD_THRESHOLD);
-  chart.addPlugin(createBollingerBandsPlugin({ period: 20, stdDevMultiplier: 2 }));
-  chart.addPlugin(createMovingAveragePlugin({ period: 20 }));
+  chart.addPlugin(movingAveragePlugin(20, '#f0b90b'));
   chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));
   chart.render();
 

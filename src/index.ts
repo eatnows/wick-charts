@@ -30,11 +30,6 @@ export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
 export { getCachedWasmModule, loadWasm } from './wasm.js';
-export { computeSma, smaJs, WASM_SMA_THRESHOLD } from './indicators/sma.js';
-export { createMovingAveragePlugin } from './indicators/movingAverage.js';
-export type { MovingAveragePluginOptions } from './indicators/movingAverage.js';
-export { createBollingerBandsPlugin } from './indicators/bollingerBands.js';
-export type { BollingerBandsPluginOptions } from './indicators/bollingerBands.js';
 
 type DragMode = 'pan' | 'value-scale' | 'scrub' | null;
 type LoadDirection = 'before' | 'after';
