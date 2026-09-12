@@ -23,8 +23,9 @@
   </header>
   <div class="hint">
     Drag: <b>chart area</b> pans/tilts the price range · <b>right price axis</b> scales it vertically ·
-    scroll (vertical): zoom · trackpad swipe / shift+scroll: pan · hover: OHLC info ·
-    touch: one finger pans, two-finger pinch zooms, hold still to inspect a candle
+    scroll (vertical): zoom · trackpad swipe / shift+scroll: pan · hover: OHLC info + axis labels ·
+    touch: one finger pans, two-finger pinch zooms, hold still to inspect a candle ·
+    amber line: 20-period moving average
   </div>
   <div id="canvas-holder">
     <canvas id="chart"></canvas>
@@ -32,7 +33,7 @@
 </div>
 
 <script type="module">
-  import { CinderChart } from '../dist/index.js';
+  import { CinderChart, createMovingAveragePlugin } from '../dist/index.js';
 
   // Deterministic per-index generator (not a running random walk) so any
   // index — past, present, or "future" — can be produced independently in
@@ -108,6 +109,7 @@
   resizeCanvas();
   const chart = new CinderChart(canvas, { style: { upColor: '#26a69a', downColor: '#ef5350' } });
   chart.setDataLoader(loader, LOAD_THRESHOLD);
+  chart.addPlugin(createMovingAveragePlugin({ period: 20 }));
   chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));
   chart.render();
 

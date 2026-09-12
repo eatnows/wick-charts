@@ -31,7 +31,7 @@ export interface RenderInput<TPoint extends SeriesPoint> {
   viewport: Viewport;
   /** Index into `sorted` (not viewport-local) of the hovered point, or null. */
   hoverIndex: number | null;
-  plugins: ChartPlugin[];
+  plugins: ChartPlugin<TPoint>[];
 }
 
 /**
@@ -150,7 +150,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       }
 
       if (plugins.length > 0) {
-        const api: PluginRenderApi = {
+        const api: PluginRenderApi<TPoint> = {
           ctx,
           chartWidth,
           chartHeight,
@@ -166,6 +166,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           },
           visibleStartIndex: startIdx,
           visibleEndIndex: endIdx,
+          allPoints: sorted,
         };
         for (const plugin of plugins) {
           // save/restore isolates each plugin's canvas state (strokeStyle,

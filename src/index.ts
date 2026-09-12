@@ -30,6 +30,9 @@ export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
 export { getCachedWasmModule, loadWasm } from './wasm.js';
+export { computeSma, smaJs, WASM_SMA_THRESHOLD } from './indicators/sma.js';
+export { createMovingAveragePlugin } from './plugins/movingAverage.js';
+export type { MovingAveragePluginOptions } from './plugins/movingAverage.js';
 
 type DragMode = 'pan' | 'value-scale' | 'scrub' | null;
 type LoadDirection = 'before' | 'after';
@@ -70,7 +73,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   private times: number[] = [];
   private viewport: Viewport;
   private hoverIndex: number | null = null;
-  private plugins: ChartPlugin[] = [];
+  private plugins: ChartPlugin<TPoint>[] = [];
 
   private dragMode: DragMode = null;
   private lastX = 0;
@@ -142,13 +145,13 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
    * `src/plugins/types.ts`. Adding overlay features this way, rather than
    * by extending `CinderChart` itself, is what keeps the core closed to
    * modification: a marker implementation never needs to touch this file. */
-  addPlugin(plugin: ChartPlugin): this {
+  addPlugin(plugin: ChartPlugin<TPoint>): this {
     this.plugins.push(plugin);
     this.scheduleRender();
     return this;
   }
 
-  removePlugin(plugin: ChartPlugin): this {
+  removePlugin(plugin: ChartPlugin<TPoint>): this {
     this.plugins = this.plugins.filter((p) => p !== plugin);
     this.scheduleRender();
     return this;

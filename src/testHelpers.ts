@@ -22,6 +22,7 @@ export interface FakeContext2D {
   textAlign: string;
   textBaseline: string;
   globalAlpha: number;
+  lineWidth: number;
 }
 
 export function createFakeContext(): FakeContext2D {
@@ -43,6 +44,7 @@ export function createFakeContext(): FakeContext2D {
     textAlign: '',
     textBaseline: '',
     globalAlpha: 1,
+    lineWidth: 1,
   };
 }
 

@@ -160,6 +160,18 @@ chart.addPlugin({
 Only call `xForIndex`/`yForValue` synchronously inside `draw()` — see "Plugins" below for why.
 `removePlugin()` takes the same object back out.
 
+A built-in indicator overlay ships as an example of a real (not toy) plugin:
+
+```ts
+import { createMovingAveragePlugin } from 'cinderchart';
+
+chart.addPlugin(createMovingAveragePlugin({ period: 20 })); // defaults: 20-period close SMA
+```
+
+`period`, `color`, `lineWidth`, and `accessor` (which candle field to average — defaults to
+`close`) are all optional overrides; see "Plugins" below for how it computes across the full
+loaded series rather than just what's currently visible.
+
 ### Cleanup
 
 Call `chart.destroy()` when you're done with a chart (component unmount, etc.) — it removes a
@@ -223,12 +235,12 @@ should export an equivalent `create<Name>Chart` next to it rather than widening
 ### Plugins (markers, annotations, drawing tools)
 
 A second, narrower extension point covers anything drawn *on top of* a chart without being
-a chart type of its own — price markers, alert lines, annotations. `CinderChart.addPlugin()`
-registers an object implementing `ChartPlugin` (`src/plugins/types.ts`); `ChartRenderer`
-calls its `draw()` once per frame, after the series and axes, with a `PluginRenderApi` built
-fresh from that frame's own pan/zoom state (`xForIndex`, `yForValue`, chart geometry). No
-concrete plugin ships yet — the hook exists so a marker implementation can be added later as
-its own file, without ever touching `CinderChart` or `ChartRenderer`.
+a chart type of its own — price markers, alert lines, annotations, indicator overlays.
+`CinderChart.addPlugin()` registers an object implementing `ChartPlugin<TPoint>`
+(`src/plugins/types.ts`); `ChartRenderer` calls its `draw()` once per frame, after the series
+and axes, with a `PluginRenderApi<TPoint>` built fresh from that frame's own pan/zoom state
+(`xForIndex`, `yForValue`, chart geometry, plus `allPoints` — the full loaded series, not just
+what's visible, and `visibleStartIndex`/`visibleEndIndex` to know which of it is on screen).
 
 Each plugin's `draw()` runs wrapped in its own `ctx.save()`/`ctx.restore()` and its own
 `try`/`catch`: a plugin that leaves canvas state dirty (`strokeStyle`, line dash, ...) can't
@@ -238,6 +250,17 @@ by contract, `xForIndex`) must only be called synchronously inside that one `dra
 above the `WASM_SCALE_THRESHOLD` point count, `yForValue` closes over a WASM-backed scale
 that's freed the moment `draw()` returns, and calling it later throws rather than touching
 freed memory.
+
+`src/plugins/movingAverage.ts`'s `createMovingAveragePlugin` is the reference
+implementation — a simple moving average over closing price (or any other candle field via
+`accessor`). It reads straight off `allPoints` rather than being handed the series
+separately, which is *why* `PluginRenderApi` carries the full loaded array and not just the
+visible one: an average needs `period - 1` points of history *before* the visible window to
+be accurate at its left edge, and the alternative (a plugin tracking the chart's data
+independently) would break the moment `setDataLoader` extends it. The average itself goes
+through `src/indicators/sma.ts`'s `computeSma` — JS below `WASM_SMA_THRESHOLD` points, the
+Rust crate's `sma` export above it, the same hybrid dispatch `hybridScale.ts` uses for
+coordinate scaling.
 
 ```bash
 # TypeScript
@@ -263,10 +286,11 @@ state — and on-demand history loading via `setDataLoader`. Per-candle volume b
 the bottom fifth of the chart when a candle has `volume`, and are entirely omitted (nothing
 drawn, nothing reserved) for data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
-it. Candlestick is the only registered series type so far, and no concrete marker/annotation
-plugin ships yet — both extension points exist but have one and zero built-in users,
-respectively. No multi-pane indicators yet (volume shares the candlestick pane rather than
-getting its own). Not published to npm.
+it — the moving-average overlay's own average (`createMovingAveragePlugin`) hybridizes the
+same way once the series is long enough. Candlestick is the only registered series type so
+far; the plugin extension point has one concrete user (the moving average) but no marker or
+annotation plugin yet. No multi-pane indicators yet (volume and the moving average both
+share the candlestick pane rather than getting their own). Not published to npm.
 
 ## License
 
