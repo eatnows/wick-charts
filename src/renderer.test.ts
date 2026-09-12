@@ -4,6 +4,7 @@ import { ChartRenderer } from './renderer';
 import { candlestickSeries } from './series/candlestick';
 import { createTestCanvas } from './testHelpers';
 import { Viewport } from './viewport';
+import type { SeriesDefinition } from './series/types';
 import type { Candle } from './types';
 import type { FakeContext2D } from './testHelpers';
 
@@ -85,8 +86,9 @@ describe('ChartRenderer (candlestick)', () => {
     renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, plugins: [] });
     const fillTextCallsWithHover = ctx.fillText.mock.calls.length;
 
-    // the legend adds exactly one more fillText call (the OHLC line) versus the no-hover render
-    expect(fillTextCallsWithHover).toBe(fillTextCallsWithoutHover + 1);
+    // hovering adds exactly three more fillText calls versus the no-hover render:
+    // the price-axis label, the time-axis label, and the OHLC legend line
+    expect(fillTextCallsWithHover).toBe(fillTextCallsWithoutHover + 3);
 
     const legendCall = ctx.fillText.mock.calls[ctx.fillText.mock.calls.length - 1] as [string, number, number];
     expect(legendCall[0]).toContain('O ');
@@ -124,5 +126,56 @@ describe('ChartRenderer (candlestick)', () => {
     expect(texts.some((t) => /^\d{2}:\d{2}$/.test(t) || /^\d{2}-\d{2}$/.test(t) || /^\d{4}-\d{2}$/.test(t))).toBe(
       true,
     );
+  });
+
+  describe('crosshair axis labels', () => {
+    it('draws a price-axis label chip at the hovered candle close, and a time-axis label chip at its time', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, plugins: [] });
+
+      const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
+      // candle[1]'s close is 92
+      expect(texts.some((t) => t.includes('92'))).toBe(true);
+      // formatHoverTime always renders a full "YYYY-MM-DD HH:mm" label
+      expect(texts.some((t) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(t))).toBe(true);
+
+      // both label chips paint a background rect in addition to the candle bodies
+      expect(ctx.fillRect.mock.calls.length).toBeGreaterThan(SAMPLE.length);
+    });
+
+    it('omits the horizontal line and price label for a series with no getPrimaryValue', () => {
+      const noPrimaryValueSeries: SeriesDefinition<Candle, unknown> = {
+        ...candlestickSeries,
+        getPrimaryValue: undefined,
+      };
+      const renderer = new ChartRenderer(canvas, noPrimaryValueSeries);
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, plugins: [] });
+
+      const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
+      // the candle's close (92) never appears as its own label without a price line to anchor it
+      expect(texts.some((t) => t === '92')).toBe(false);
+      // the time label and legend still draw regardless
+      expect(texts.some((t) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(t))).toBe(true);
+    });
+
+    it('keeps the time-axis label chip fully on-screen even when hovering the first visible candle', () => {
+      const manyCandles = Array.from({ length: 20 }, (_, i) => candle(i, 100 + i, 105 + i, 95 + i, 102 + i));
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      renderer.render({
+        sorted: manyCandles,
+        times: manyCandles.map((c) => c.time as number),
+        viewport: new Viewport(manyCandles.length),
+        hoverIndex: 0, // near the left edge, where the chip would otherwise overflow past x=0
+        plugins: [],
+      });
+
+      // the time-axis chip is the fillRect call in the bottom (time-axis) strip
+      const chartHeight = renderer.chartHeight;
+      const timeChipCall = ctx.fillRect.mock.calls.find(
+        (call) => (call as [number, number, number, number])[1] === chartHeight,
+      ) as [number, number, number, number] | undefined;
+      expect(timeChipCall).toBeDefined();
+      expect(timeChipCall![0]).toBeGreaterThanOrEqual(0); // left edge clamped, never negative
+    });
   });
 });

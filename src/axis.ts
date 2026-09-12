@@ -15,6 +15,18 @@ export function formatAxisLabel(unixSeconds: number, spanSeconds: number): strin
 }
 
 /**
+ * Full "YYYY-MM-DD HH:mm" for a single hovered instant — unlike
+ * `formatAxisLabel`, which trims precision to fit a shared span of tick
+ * labels, a crosshair label describes exactly one point and has no
+ * neighbors to stay legible next to, so it always shows the full date and
+ * time regardless of how zoomed in or out the chart is.
+ */
+export function formatHoverTime(unixSeconds: number): string {
+  const iso = new Date(unixSeconds * 1000).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
+/**
  * Evenly-spaced indices into a `length`-long series, capped at `maxTicks`.
  * Used to decide which points get an axis label — labeling every point
  * would overlap into unreadable mush on anything but a tiny series.

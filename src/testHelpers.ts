@@ -12,6 +12,7 @@ export interface FakeContext2D {
   lineTo: ReturnType<typeof vi.fn>;
   stroke: ReturnType<typeof vi.fn>;
   fillText: ReturnType<typeof vi.fn>;
+  measureText: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
   setLineDash: ReturnType<typeof vi.fn>;
@@ -32,6 +33,7 @@ export function createFakeContext(): FakeContext2D {
     lineTo: vi.fn(),
     stroke: vi.fn(),
     fillText: vi.fn(),
+    measureText: vi.fn().mockReturnValue({ width: 40 } as TextMetrics),
     save: vi.fn(),
     restore: vi.fn(),
     setLineDash: vi.fn(),

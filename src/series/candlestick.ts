@@ -101,12 +101,17 @@ function formatLegend(candle: Candle): string[] {
   return parts;
 }
 
+function getPrimaryValue(candle: Candle): number {
+  return candle.close;
+}
+
 export const candlestickSeries: SeriesDefinition<Candle, CandlestickStyle> = {
   type: 'candlestick',
   defaultStyle: DEFAULT_STYLE,
   getValueRange,
   draw,
   formatLegend,
+  getPrimaryValue,
 };
 
 // Registered as a module-level side effect so importing this file (which

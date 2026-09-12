@@ -1,4 +1,4 @@
-import { formatAxisLabel, pickTickIndices } from './axis.js';
+import { formatAxisLabel, formatHoverTime, pickTickIndices } from './axis.js';
 import { createScale } from './hybridScale.js';
 import { formatPrice, niceTicks } from './priceAxis.js';
 import type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
@@ -18,6 +18,10 @@ const AXIS_LINE_COLOR = '#33333333';
 const GRID_LINE_COLOR = '#2a2a2a55';
 const CROSSHAIR_COLOR = '#9090904d';
 const LEGEND_TEXT_COLOR = '#c8c8c8';
+const CROSSHAIR_LABEL_BG = '#3a3a3a';
+const CROSSHAIR_LABEL_TEXT = '#f0f0f0';
+const LABEL_PADDING_X = 4;
+const LABEL_PADDING_Y = 3;
 
 export interface RenderInput<TPoint extends SeriesPoint> {
   /** Every point, sorted ascending by normalized time. */
@@ -129,11 +133,20 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
         style,
       );
 
-      this.renderPriceAxis(valueMin, valueMax, yScale, chartWidth, chartHeight);
+      const priceStep = this.currentPriceStep(valueMin, valueMax);
+      this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight);
       this.renderTimeAxis(times, startIdx, visible.length, chartHeight, chartWidth, xForIndex);
 
       if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
-        this.renderCrosshairAndLegend(sorted[hoverIndex]!, xForIndex(hoverIndex), chartHeight);
+        this.renderCrosshairAndLegend(
+          sorted[hoverIndex]!,
+          xForIndex(hoverIndex),
+          times[hoverIndex]!,
+          yScale,
+          priceStep,
+          chartWidth,
+          chartHeight,
+        );
       }
 
       if (plugins.length > 0) {
@@ -176,16 +189,24 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     }
   }
 
+  /** The decimal precision `formatPrice` should use for the current price
+   * range — shared by the axis ticks and the crosshair's price label so
+   * both display the same value with the same rounding. */
+  private currentPriceStep(priceMin: number, priceMax: number): number {
+    const ticks = niceTicks(priceMin, priceMax, PRICE_TICK_COUNT);
+    return ticks.length > 1 ? ticks[1]! - ticks[0]! : 0;
+  }
+
   private renderPriceAxis(
     priceMin: number,
     priceMax: number,
+    step: number,
     yScale: Scale,
     chartWidth: number,
     chartHeight: number,
   ): void {
     const { ctx } = this;
     const ticks = niceTicks(priceMin, priceMax, PRICE_TICK_COUNT);
-    const step = ticks.length > 1 ? ticks[1]! - ticks[0]! : 0;
 
     ctx.strokeStyle = AXIS_LINE_COLOR;
     ctx.beginPath();
@@ -242,17 +263,44 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     }
   }
 
-  private renderCrosshairAndLegend(point: TPoint, x: number, chartHeight: number): void {
-    const { ctx, seriesDefinition, style } = this;
+  private renderCrosshairAndLegend(
+    point: TPoint,
+    x: number,
+    timeSeconds: number,
+    yScale: Scale,
+    priceStep: number,
+    chartWidth: number,
+    chartHeight: number,
+  ): void {
+    const { ctx, canvas, seriesDefinition, style } = this;
 
     ctx.save();
     ctx.strokeStyle = CROSSHAIR_COLOR;
     ctx.setLineDash([4, 4]);
+
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, chartHeight);
     ctx.stroke();
+
+    // Not every series has one natural "current value" (getPrimaryValue is
+    // optional) — without one there's nothing to draw a horizontal line or
+    // price label at, so only the vertical line + legend apply.
+    const primaryValue = seriesDefinition.getPrimaryValue?.(point, style);
+    const y = primaryValue !== undefined ? yScale.map(primaryValue) : null;
+    const priceLineVisible = y !== null && y >= 0 && y <= chartHeight;
+    if (priceLineVisible) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(chartWidth, y);
+      ctx.stroke();
+    }
     ctx.restore();
+
+    if (priceLineVisible && primaryValue !== undefined) {
+      this.renderPriceLabelChip(formatPrice(primaryValue, priceStep), y, chartWidth);
+    }
+    this.renderTimeLabelChip(formatHoverTime(timeSeconds), x, chartHeight, canvas.width);
 
     const parts = seriesDefinition.formatLegend?.(point, style) ?? [];
     if (parts.length === 0) return;
@@ -262,5 +310,41 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     ctx.textBaseline = 'top';
     ctx.fillStyle = LEGEND_TEXT_COLOR;
     ctx.fillText(parts.join('   '), 8, 8);
+  }
+
+  /** The highlighted price-axis label that follows the crosshair's
+   * horizontal line — drawn over `renderPriceAxis`'s own tick labels so the
+   * hovered value reads clearly even where it lands between two ticks. */
+  private renderPriceLabelChip(text: string, y: number, chartWidth: number): void {
+    const { ctx } = this;
+    ctx.font = '10px sans-serif';
+    const chipHeight = 10 + LABEL_PADDING_Y * 2;
+
+    ctx.fillStyle = CROSSHAIR_LABEL_BG;
+    ctx.fillRect(chartWidth, y - chipHeight / 2, this.priceAxisWidth, chipHeight);
+
+    ctx.fillStyle = CROSSHAIR_LABEL_TEXT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, chartWidth + LABEL_PADDING_X, y);
+  }
+
+  /** The highlighted time-axis label under the crosshair's vertical line.
+   * Clamped so its background chip stays fully on-screen even when the
+   * hovered point sits at the very first or last visible index. */
+  private renderTimeLabelChip(text: string, x: number, chartHeight: number, canvasWidth: number): void {
+    const { ctx } = this;
+    ctx.font = '10px sans-serif';
+    const chipWidth = ctx.measureText(text).width + LABEL_PADDING_X * 2;
+    const chipHeight = 10 + LABEL_PADDING_Y * 2;
+    const chipLeft = Math.min(Math.max(x - chipWidth / 2, 0), canvasWidth - chipWidth);
+
+    ctx.fillStyle = CROSSHAIR_LABEL_BG;
+    ctx.fillRect(chipLeft, chartHeight, chipWidth, chipHeight);
+
+    ctx.fillStyle = CROSSHAIR_LABEL_TEXT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(text, chipLeft + LABEL_PADDING_X, chartHeight + LABEL_PADDING_Y);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAxisLabel, pickTickIndices } from './axis';
+import { formatAxisLabel, formatHoverTime, pickTickIndices } from './axis';
 
 describe('formatAxisLabel', () => {
   const t = Date.parse('2026-09-11T14:30:00Z') / 1000;
@@ -14,6 +14,13 @@ describe('formatAxisLabel', () => {
 
   it('shows YYYY-MM when the span exceeds 90 days', () => {
     expect(formatAxisLabel(t, 400 * 86_400)).toBe('2026-09');
+  });
+});
+
+describe('formatHoverTime', () => {
+  it('always shows the full date and time, regardless of span', () => {
+    const t = Date.parse('2026-09-11T14:30:00Z') / 1000;
+    expect(formatHoverTime(t)).toBe('2026-09-11 14:30');
   });
 });
 
