@@ -241,6 +241,30 @@ describe('CinderChart', () => {
       fireMouse(canvas, 'mousemove', { clientX: 770, clientY: 100 }); // inside the 64px price-axis strip
       expect(chart.getHoveredPoint()).toBeNull();
     });
+
+    it('re-renders when the pointer moves vertically within the same candle column', () => {
+      // Regression test: the crosshair's horizontal line follows the raw
+      // cursor position (ChartRenderer.renderCrosshairAndLegend), so moving
+      // the mouse up/down without crossing into a different candle must
+      // still trigger a render — otherwise the line looks stuck in place
+      // until the next candle-column change.
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        cb(0);
+        return 0;
+      });
+
+      try {
+        fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 });
+        expect(rafSpy).toHaveBeenCalledTimes(1);
+
+        fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 150 }); // same column, different row
+        expect(rafSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        rafSpy.mockRestore();
+      }
+    });
   });
 
   describe('setDataLoader', () => {
@@ -470,6 +494,34 @@ describe('CinderChart', () => {
       onTouchMove(fakeTouchEvent([touchPoint(200, 100)])); // slide to inspect a different candle
       expect(chart.getVisibleRange()).toEqual(rangeAfterHold); // still not panning
       expect(chart.getHoveredPoint()).not.toBe(firstHover);
+    });
+
+    it('re-renders when scrubbing moves vertically within the same candle column', () => {
+      // Regression test, touch counterpart of the mouse one above: the
+      // crosshair's horizontal line follows the raw finger position, so it
+      // must keep tracking even while the finger stays over the same candle.
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
+
+      // Installed before entering scrub mode so its own scheduleRender()
+      // call (which would otherwise leave renderScheduled stuck true under
+      // fake timers, blocking the next one) also resolves synchronously.
+      const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        cb(0);
+        return 0;
+      });
+
+      try {
+        onTouchStart(fakeTouchEvent([touchPoint(400, 100)]));
+        vi.advanceTimersByTime(LONG_PRESS_MS + 10); // enter scrub mode
+        expect(rafSpy).toHaveBeenCalledTimes(1);
+
+        onTouchMove(fakeTouchEvent([touchPoint(400, 150)])); // same column, different row
+        expect(rafSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        rafSpy.mockRestore();
+      }
     });
 
     it('lifting the finger after scrubbing clears the hover, returning to the original state', () => {

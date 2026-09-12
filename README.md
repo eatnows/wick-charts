@@ -245,8 +245,7 @@ frame before it resolves just uses the JS scale, so there's no load-time flash o
 Candlesticks are the only chart type today, but nothing above `src/series/` knows that.
 `CinderChart` and `ChartRenderer` are generic over a point shape (`SeriesPoint` — just a
 `time`) and delegate every type-specific decision — how to compute the value-axis range,
-how to draw the visible points, what a hover legend says, what single value the crosshair's
-horizontal line and price-axis label lock onto (`getPrimaryValue` — a candle's close) — to a
+how to draw the visible points, what a hover legend says — to a
 `SeriesDefinition` (see `src/series/types.ts`) resolved at construction time from
 `options.type` via a small registry (`src/series/registry.ts`). `src/series/candlestick.ts`
 is the reference implementation: it registers itself as `'candlestick'` on import, which is
@@ -346,10 +345,11 @@ cargo check --target wasm32-unknown-unknown        # compiles for the wasm targe
 
 Interactive on both mouse and touch: pan (drag or horizontal scroll/swipe), zoom (vertical
 scroll or a two-finger pinch, both cursor/midpoint-anchored), price-axis drag-to-scale,
-hover crosshair with an OHLC(+volume) legend and axis labels (a highlighted price on the
-price axis, a full date+time on the time axis, both following the hovered point) — a still
-finger held past a short delay substitutes for hover on touch, since touch has no hover
-state — and on-demand history loading via `setDataLoader`. Per-candle volume bars draw in
+hover crosshair with an OHLC(+volume) legend and axis labels (the horizontal line and its
+price-axis label follow the actual cursor/finger row continuously, not a fixed value like the
+hovered candle's close — a full date+time label follows the hovered candle on the time axis) —
+a still finger held past a short delay substitutes for hover on touch, since touch has no
+hover state — and on-demand history loading via `setDataLoader`. Per-candle volume bars draw in
 the bottom fifth of the chart when a candle has `volume`, and are entirely omitted (nothing
 drawn, nothing reserved) for data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below

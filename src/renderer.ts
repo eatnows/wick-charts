@@ -31,6 +31,11 @@ export interface RenderInput<TPoint extends SeriesPoint> {
   viewport: Viewport;
   /** Index into `sorted` (not viewport-local) of the hovered point, or null. */
   hoverIndex: number | null;
+  /** Device-pixel y of the pointer/finger that produced `hoverIndex`, or
+   * null. Drives the crosshair's horizontal line directly — see
+   * `renderCrosshairAndLegend` for why that has to be the raw cursor
+   * position rather than any property of the hovered point itself. */
+  hoverY: number | null;
   plugins: ChartPlugin<TPoint>[];
 }
 
@@ -78,7 +83,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
 
   render(input: RenderInput<TPoint>): void {
     const { ctx, canvas, background, seriesDefinition, style } = this;
-    const { sorted, times, viewport, hoverIndex, plugins } = input;
+    const { sorted, times, viewport, hoverIndex, hoverY, plugins } = input;
     const width = canvas.width;
     const height = canvas.height;
     const chartWidth = this.chartWidth;
@@ -142,7 +147,9 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           sorted[hoverIndex]!,
           xForIndex(hoverIndex),
           times[hoverIndex]!,
-          yScale,
+          hoverY,
+          valueMin,
+          valueMax,
           priceStep,
           chartWidth,
           chartHeight,
@@ -274,7 +281,9 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     point: TPoint,
     x: number,
     timeSeconds: number,
-    yScale: Scale,
+    hoverY: number | null,
+    valueMin: number,
+    valueMax: number,
     priceStep: number,
     chartWidth: number,
     chartHeight: number,
@@ -290,22 +299,27 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     ctx.lineTo(x, chartHeight);
     ctx.stroke();
 
-    // Not every series has one natural "current value" (getPrimaryValue is
-    // optional) — without one there's nothing to draw a horizontal line or
-    // price label at, so only the vertical line + legend apply.
-    const primaryValue = seriesDefinition.getPrimaryValue?.(point, style);
-    const y = primaryValue !== undefined ? yScale.map(primaryValue) : null;
-    const priceLineVisible = y !== null && y >= 0 && y <= chartHeight;
+    // The horizontal line follows the actual cursor/finger position, not
+    // any property of the hovered point — pinning it to (say) the candle's
+    // close would leave it motionless while the pointer moves anywhere
+    // within that same candle's column, which reads as broken/stuck rather
+    // than as a crosshair. Only drawn while the pointer is actually inside
+    // the chart's vertical extent, same as the price-axis tick-skip logic
+    // in renderPriceAxis.
+    const priceLineVisible = hoverY !== null && hoverY >= 0 && hoverY <= chartHeight;
     if (priceLineVisible) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(chartWidth, y);
+      ctx.moveTo(0, hoverY);
+      ctx.lineTo(chartWidth, hoverY);
       ctx.stroke();
     }
     ctx.restore();
 
-    if (priceLineVisible && primaryValue !== undefined) {
-      this.renderPriceLabelChip(formatPrice(primaryValue, priceStep), y, chartWidth);
+    if (priceLineVisible) {
+      // Exact inverse of the value->y mapping createScale set up for this
+      // frame — same formula as PluginRenderApi.valueForY.
+      const value = valueMin + (1 - hoverY / chartHeight) * (valueMax - valueMin);
+      this.renderPriceLabelChip(formatPrice(value, priceStep), hoverY, chartWidth);
     }
     this.renderTimeLabelChip(formatHoverTime(timeSeconds), x, chartHeight, canvas.width);
 

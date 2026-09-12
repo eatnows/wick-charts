@@ -71,12 +71,6 @@ describe('candlestickSeries', () => {
     });
   });
 
-  describe('getPrimaryValue', () => {
-    it("is the candle's close — what the crosshair's horizontal line locks onto", () => {
-      expect(candlestickSeries.getPrimaryValue!(candle(1, 100, 110, 95, 105))).toBe(105);
-    });
-  });
-
   describe('draw — volume bars', () => {
     it('draws only wick+body fillRects when no visible candle has volume', () => {
       const ctx = createFakeContext();

@@ -70,6 +70,12 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   private times: number[] = [];
   private viewport: Viewport;
   private hoverIndex: number | null = null;
+  /** Device-pixel y of the pointer/finger that produced `hoverIndex` — the
+   * crosshair's horizontal line follows this directly, not any property of
+   * the hovered point itself (see `ChartRenderer.renderCrosshairAndLegend`
+   * for why: pinning it to, say, the candle's close would leave the line
+   * motionless while the pointer moves within that candle's column). */
+  private hoverY: number | null = null;
   private plugins: ChartPlugin<TPoint>[] = [];
   /** The plugin whose `onPointerDown` returned `true` for the pointer
    * currently down, or `null` when no plugin has claimed the current
@@ -124,6 +130,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     this.times = this.sorted.map((p) => toUnixSeconds(p.time));
     this.viewport = new Viewport(this.sorted.length, DEFAULT_VISIBLE_POINTS);
     this.hoverIndex = null;
+    this.hoverY = null;
     this.exhausted = { before: false, after: false };
     return this;
   }
@@ -164,6 +171,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
       times: this.times,
       viewport: this.viewport,
       hoverIndex: this.hoverIndex,
+      hoverY: this.hoverY,
       plugins: this.plugins,
     });
     this.maybeLoadMore();
@@ -301,6 +309,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     this.dragMode = null;
     if (this.hoverIndex !== null) {
       this.hoverIndex = null;
+      this.hoverY = null;
       this.scheduleRender();
     }
   };
@@ -371,6 +380,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
       }
       if (this.hoverIndex !== null) {
         this.hoverIndex = null;
+        this.hoverY = null;
         this.scheduleRender();
       }
       this.dragMode = null;
@@ -487,6 +497,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
       // here even though dragMode was already reset to null earlier.
       if (this.hoverIndex !== null) {
         this.hoverIndex = null;
+        this.hoverY = null;
         this.scheduleRender();
       }
       this.dragMode = null;
@@ -528,10 +539,11 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   };
 
   private updateHover(point: { clientX: number; clientY: number }): void {
-    const { x } = this.cursorPosition(point);
+    const { x, y } = this.cursorPosition(point);
     if (x >= this.renderer.chartWidth || this.sorted.length === 0) {
       if (this.hoverIndex !== null) {
         this.hoverIndex = null;
+        this.hoverY = null;
         this.scheduleRender();
       }
       return;
@@ -543,8 +555,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     const rawIndex = Math.floor(this.viewport.startIndex + x / slotWidth);
     const nextHover = Math.min(this.sorted.length - 1, Math.max(0, rawIndex));
 
-    if (nextHover !== this.hoverIndex) {
+    // Re-render on *either* changing — not just a new candle column. The
+    // crosshair's horizontal line tracks y continuously (see
+    // ChartRenderer.renderCrosshairAndLegend), so without the y check here
+    // it would only move when the pointer crosses into a different candle,
+    // looking stuck the rest of the time.
+    if (nextHover !== this.hoverIndex || y !== this.hoverY) {
       this.hoverIndex = nextHover;
+      this.hoverY = y;
       this.scheduleRender();
     }
   }

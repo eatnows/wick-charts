@@ -4,7 +4,6 @@ import { ChartRenderer } from './renderer';
 import { candlestickSeries } from './series/candlestick';
 import { createTestCanvas } from './testHelpers';
 import { Viewport } from './viewport';
-import type { SeriesDefinition } from './series/types';
 import type { Candle } from './types';
 import type { FakeContext2D } from './testHelpers';
 
@@ -44,7 +43,7 @@ describe('ChartRenderer (candlestick)', () => {
   it('clears the canvas and draws nothing else for an empty series', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
     const viewport = new Viewport(0);
-    renderer.render({ sorted: [], times: [], viewport, hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: [], times: [], viewport, hoverIndex: null, hoverY: null, plugins: [] });
 
     expect(ctx.clearRect).toHaveBeenCalledWith(0, 0, 800, 400);
     expect(ctx.fillRect).not.toHaveBeenCalled();
@@ -53,14 +52,14 @@ describe('ChartRenderer (candlestick)', () => {
 
   it('fills the background when a non-transparent color is configured', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries, { background: '#111111' });
-    renderer.render({ sorted: [], times: [], viewport: new Viewport(0), hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: [], times: [], viewport: new Viewport(0), hoverIndex: null, hoverY: null, plugins: [] });
     expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 800, 400);
   });
 
   it('draws one wick (stroke) and one body (fillRect) per visible candle', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
     const viewport = new Viewport(SAMPLE.length);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, hoverY: null, plugins: [] });
 
     expect(ctx.stroke.mock.calls.length).toBeGreaterThanOrEqual(SAMPLE.length);
     // one body fillRect per candle, plus zero or more axis fills (background is transparent here)
@@ -71,7 +70,7 @@ describe('ChartRenderer (candlestick)', () => {
   it('does not draw candles when the chart area has no usable width', () => {
     const { canvas: tiny, ctx: tinyCtx } = createTestCanvas(10, 400); // narrower than the 64px price axis
     const renderer = new ChartRenderer(tiny, candlestickSeries);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [] });
     expect(tinyCtx.fillRect).not.toHaveBeenCalled();
   });
 
@@ -79,11 +78,11 @@ describe('ChartRenderer (candlestick)', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
     const viewport = new Viewport(SAMPLE.length);
 
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, hoverY: null, plugins: [] });
     const fillTextCallsWithoutHover = ctx.fillText.mock.calls.length;
     ctx.fillText.mockClear();
 
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [] });
     const fillTextCallsWithHover = ctx.fillText.mock.calls.length;
 
     // hovering adds exactly three more fillText calls versus the no-hover render:
@@ -103,6 +102,7 @@ describe('ChartRenderer (candlestick)', () => {
       times: [1],
       viewport: new Viewport(1),
       hoverIndex: 0,
+      hoverY: 50,
       plugins: [],
     });
     const [legendText] = ctx.fillText.mock.calls[ctx.fillText.mock.calls.length - 1] as [string];
@@ -111,7 +111,7 @@ describe('ChartRenderer (candlestick)', () => {
 
   it('renders price-axis tick labels', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [] });
     // price ticks are formatted with toLocaleString-free comma grouping via formatPrice;
     // just assert at least one fillText call looks like a plain number label.
     const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
@@ -120,7 +120,7 @@ describe('ChartRenderer (candlestick)', () => {
 
   it('renders time-axis tick labels', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [] });
     const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
     // formatAxisLabel produces HH:mm / MM-DD / YYYY-MM shaped strings for this tiny time span
     expect(texts.some((t) => /^\d{2}:\d{2}$/.test(t) || /^\d{2}-\d{2}$/.test(t) || /^\d{4}-\d{2}$/.test(t))).toBe(
@@ -129,13 +129,11 @@ describe('ChartRenderer (candlestick)', () => {
   });
 
   describe('crosshair axis labels', () => {
-    it('draws a price-axis label chip at the hovered candle close, and a time-axis label chip at its time', () => {
+    it('draws a price-axis label chip at the hovered pixel row, and a time-axis label chip at the hovered time', () => {
       const renderer = new ChartRenderer(canvas, candlestickSeries);
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: 100, plugins: [] });
 
       const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
-      // candle[1]'s close is 92
-      expect(texts.some((t) => t.includes('92'))).toBe(true);
       // formatHoverTime always renders a full "YYYY-MM-DD HH:mm" label
       expect(texts.some((t) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(t))).toBe(true);
 
@@ -143,19 +141,36 @@ describe('ChartRenderer (candlestick)', () => {
       expect(ctx.fillRect.mock.calls.length).toBeGreaterThan(SAMPLE.length);
     });
 
-    it('omits the horizontal line and price label for a series with no getPrimaryValue', () => {
-      const noPrimaryValueSeries: SeriesDefinition<Candle, unknown> = {
-        ...candlestickSeries,
-        getPrimaryValue: undefined,
-      };
-      const renderer = new ChartRenderer(canvas, noPrimaryValueSeries);
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, plugins: [] });
+    it('follows the hovered pixel row, not a fixed value like the candle close', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      const viewport = new Viewport(SAMPLE.length);
 
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 20, plugins: [] });
+      // the price label chip's fillText is drawn at exactly (chartWidth + padding, hoverY)
+      const priceLabelNearTop = ctx.fillText.mock.calls.find((call) => call[2] === 20)?.[0] as string | undefined;
+
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 300, plugins: [] });
+      const priceLabelNearBottom = ctx.fillText.mock.calls.find((call) => call[2] === 300)?.[0] as
+        | string
+        | undefined;
+
+      // same hovered candle, different pointer row -> a different price-axis label,
+      // proving the horizontal line/label track the pointer and not the candle itself
+      expect(priceLabelNearTop).toBeDefined();
+      expect(priceLabelNearBottom).toBeDefined();
+      expect(priceLabelNearTop).not.toBe(priceLabelNearBottom);
+    });
+
+    it('omits the horizontal line and price label when there is no hovered pixel row', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: null, plugins: [] });
+
+      // with no price line, only the time label chip's background rect is added
+      // on top of the candle bodies (one fillRect each)
+      expect(ctx.fillRect.mock.calls.length).toBe(SAMPLE.length + 1);
+      // the legend (which doesn't depend on hoverY at all) still draws
       const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
-      // the candle's close (92) never appears as its own label without a price line to anchor it
-      expect(texts.some((t) => t === '92')).toBe(false);
-      // the time label and legend still draw regardless
-      expect(texts.some((t) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(t))).toBe(true);
+      expect(texts.some((t) => t.includes('O '))).toBe(true);
     });
 
     it('keeps the time-axis label chip fully on-screen even when hovering the first visible candle', () => {
@@ -166,6 +181,7 @@ describe('ChartRenderer (candlestick)', () => {
         times: manyCandles.map((c) => c.time as number),
         viewport: new Viewport(manyCandles.length),
         hoverIndex: 0, // near the left edge, where the chip would otherwise overflow past x=0
+        hoverY: 100,
         plugins: [],
       });
 
@@ -189,6 +205,7 @@ describe('ChartRenderer (candlestick)', () => {
         times: TIMES,
         viewport: new Viewport(SAMPLE.length),
         hoverIndex: null,
+        hoverY: null,
         plugins: [
           {
             draw: (api) => {

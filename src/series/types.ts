@@ -56,10 +56,4 @@ export interface SeriesDefinition<TPoint extends SeriesPoint, TStyle> {
    * segment (joined with spacing by the renderer). Omit to draw the
    * crosshair line with no legend text. */
   formatLegend?(point: TPoint, style: TStyle): string[];
-  /** The single value (in this series's y-domain) the horizontal crosshair
-   * line and price-axis label lock onto for a hovered point — a candle's
-   * close, say. Omit if the series has no one natural value to point at;
-   * the crosshair then draws its vertical line and legend only, with no
-   * horizontal line or price-axis label. */
-  getPrimaryValue?(point: TPoint, style: TStyle): number;
 }
