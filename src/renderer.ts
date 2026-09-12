@@ -164,6 +164,12 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
             }
             return yScale.map(value);
           },
+          // Exact inverse of xForIndex above — solving
+          // `x = (index - viewport.startIndex) * slotWidth + slotWidth / 2` for `index`.
+          indexForX: (x) => viewport.startIndex + (x - slotWidth / 2) / slotWidth,
+          // Exact inverse of the value->y mapping createScale set up for this
+          // frame (domain [valueMin, valueMax] -> range [chartHeight, 0]).
+          valueForY: (y) => valueMin + (1 - y / chartHeight) * (valueMax - valueMin),
           visibleStartIndex: startIdx,
           visibleEndIndex: endIdx,
           allPoints: sorted,

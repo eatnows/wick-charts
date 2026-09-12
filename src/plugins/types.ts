@@ -26,6 +26,13 @@ export interface PluginRenderApi<TPoint extends SeriesPoint = SeriesPoint> {
    * duration of this `draw()` call — see the interface-level note on
    * `PluginRenderApi`. */
   yForValue: (value: number) => number;
+  /** x pixel -> global (possibly fractional) index — the exact inverse of
+   * `xForIndex`, i.e. `xForIndex(indexForX(x)) === x`. For placing or
+   * hit-testing something at a pixel position instead of a known index. */
+  indexForX: (x: number) => number;
+  /** y pixel -> value in the current frame's y-domain — the exact inverse
+   * of `yForValue`. */
+  valueForY: (y: number) => number;
   /** Index range currently visible, global (sorted-array) indices. */
   visibleStartIndex: number;
   visibleEndIndex: number;
@@ -38,6 +45,24 @@ export interface PluginRenderApi<TPoint extends SeriesPoint = SeriesPoint> {
    * limited to `visibleStartIndex..visibleEndIndex`.
    */
   allPoints: readonly TPoint[];
+}
+
+/**
+ * A pointer (mouse, or single-finger touch) position, given to a plugin's
+ * `onPointerDown`/`onPointerMove`/`onPointerUp`. `x`/`y` are canvas
+ * backing-store pixels — the same convention `PluginRenderApi`'s
+ * `xForIndex`/`yForValue` use. `index` and `value` are that position
+ * already converted to data space (the chart's own inverse-coordinate
+ * math, so a plugin never has to duplicate it): `index` is a possibly
+ * fractional global (sorted-array) index, and `value` is the value under
+ * the pointer in the current frame's y-domain — `null` if there's no data
+ * or no usable chart area to compute one against.
+ */
+export interface ChartPointerEvent {
+  x: number;
+  y: number;
+  index: number;
+  value: number | null;
 }
 
 /**
@@ -55,7 +80,32 @@ export interface PluginRenderApi<TPoint extends SeriesPoint = SeriesPoint> {
  * current frame, which `PluginRenderApi` provides. Generic over the same
  * `TPoint` the chart itself is generic over, so a candlestick chart's
  * plugins see `Candle`-shaped points without a cast.
+ *
+ * The optional `onPointer*` hooks are what an *interactive* plugin (a
+ * trend line, a drawing tool — anything placed or edited by the user,
+ * rather than purely computed from data like an indicator) needs beyond
+ * `draw`: a way to see raw pointer gestures on the chart, which
+ * `CinderChart` would otherwise consume entirely for its own panning.
  */
 export interface ChartPlugin<TPoint extends SeriesPoint = SeriesPoint> {
   draw(api: PluginRenderApi<TPoint>): void;
+  /**
+   * Called on pointer down inside the chart's plotting area (not the
+   * price-axis strip). Return `true` to *claim* the gesture: `CinderChart`
+   * then suppresses its own panning/hover for this pointer until it's
+   * released, and routes `onPointerMove`/`onPointerUp` to this plugin and
+   * no other. Return `false`/`undefined` (the default, if omitted) to
+   * leave the gesture to the chart's own panning — a plugin should only
+   * claim a gesture while actively placing or editing something of its
+   * own, not on every pointer down.
+   *
+   * Checked in reverse-registration order (the most recently added plugin
+   * gets first refusal), and the first plugin to claim a gesture wins —
+   * at most one plugin owns a given pointer down-to-up sequence.
+   */
+  onPointerDown?(event: ChartPointerEvent): boolean | void;
+  /** Only called for a gesture this plugin's `onPointerDown` claimed. */
+  onPointerMove?(event: ChartPointerEvent): void;
+  /** Only called for a gesture this plugin's `onPointerDown` claimed. */
+  onPointerUp?(event: ChartPointerEvent): void;
 }

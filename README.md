@@ -165,6 +165,49 @@ accurate at its left edge. `demo/index.html` has a complete worked example (a mo
 built entirely in the demo's own code, period and color included) — see "Indicators" below
 for why that lives in the demo and not in the library itself.
 
+#### Interactive plugins: drawing tools
+
+A plugin that only draws (a marker, an indicator overlay) never needs anything beyond `draw()`.
+One that's placed or edited by the user — a trend line, a horizontal price alert someone drags
+into position — needs to see raw pointer gestures too, which `CinderChart` would otherwise
+consume entirely for its own panning. `onPointerDown`/`onPointerMove`/`onPointerUp` are for
+exactly this:
+
+```ts
+let start = null;
+
+chart.addPlugin({
+  draw({ ctx, xForIndex, yForValue }) {
+    if (!start) return;
+    ctx.strokeStyle = '#00c2ff';
+    ctx.beginPath();
+    ctx.moveTo(xForIndex(start.index), yForValue(start.value));
+    ctx.lineTo(xForIndex(start.end.index), yForValue(start.end.value));
+    ctx.stroke();
+  },
+  onPointerDown(e) {
+    if (e.value === null) return false; // nothing to anchor a line to
+    start = { index: e.index, value: e.value, end: e };
+    return true; // claim the gesture — the chart won't pan while this line is being drawn
+  },
+  onPointerMove(e) {
+    start.end = e;
+  },
+  onPointerUp(e) {
+    start.end = e; // the line is now finished; a real tool would push it into a list and stop editing
+  },
+});
+```
+
+`e.index`/`e.value` are the pointer position already converted to data space — a possibly
+fractional index and the value under the cursor in the current frame's y-domain — computed
+the exact same way `xForIndex`/`yForValue` map the other direction, so a line anchored at
+`e.index`/`e.value` and drawn back through `xForIndex`/`yForValue` lines up with the pointer
+exactly. This example always claims the gesture once a value exists, which is enough to prove
+the mechanism but would fight with panning in a real app (every drag becomes a new line) — a
+real drawing tool gates `onPointerDown` behind its own "tool active" state (a toggle button,
+a keyboard modifier, whatever fits the app), only claiming gestures while armed.
+
 ### Cleanup
 
 Call `chart.destroy()` when you're done with a chart (component unmount, etc.) — it removes a
@@ -245,6 +288,28 @@ above the `WASM_SCALE_THRESHOLD` point count, `yForValue` closes over a WASM-bac
 that's freed the moment `draw()` returns, and calling it later throws rather than touching
 freed memory.
 
+A `ChartPlugin` that only implements `draw()` covers markers and indicator overlays — anything
+purely computed from data. A drawing tool (a trend line the user places by dragging) needs
+two things `draw()` alone can't give it, both added specifically to make that buildable:
+
+- **Inverse coordinate mapping** — `PluginRenderApi.indexForX`/`valueForY`, the exact
+  inverses of `xForIndex`/`yForValue` (`xForIndex(indexForX(x)) === x`). Computed directly
+  from the same `valueMin`/`valueMax`/`chartHeight`/`slotWidth` the forward direction already
+  uses — no changes to `Scale`/`hybridScale.ts`/the WASM crate were needed, since inverting a
+  pointer position happens on user gestures, not once per point per frame, so it was never a
+  case the batched/WASM-accelerated path was for.
+- **Pointer gesture claiming** — `ChartPlugin.onPointerDown`/`onPointerMove`/`onPointerUp`.
+  `CinderChart` offers every pointer-down inside the chart area (never the price-axis strip)
+  to its plugins in reverse-registration order *before* deciding its own pan/price-scale
+  mode; the first plugin whose `onPointerDown` returns `true` becomes the gesture's sole
+  owner (`activeGesturePlugin`) until pointer-up, and the chart's own panning/hover is
+  suppressed for that gesture entirely. A second touch landing mid-gesture ends it early
+  (calls `onPointerUp`) the same way it already cancelled an in-progress scrub. Each
+  `ChartPointerEvent` carries the raw pixel position plus the same `index`/`value` conversion
+  `indexForX`/`valueForY` do, computed via `frameValueRange()` — the same value-range logic
+  `ChartRenderer.render` uses, recomputed on demand since pointer events happen between
+  frames, not during one.
+
 ### Indicators (moving averages, Bollinger Bands, ...): deliberately not included
 
 cinderchart ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
@@ -288,10 +353,12 @@ state — and on-demand history loading via `setDataLoader`. Per-candle volume b
 the bottom fifth of the chart when a candle has `volume`, and are entirely omitted (nothing
 drawn, nothing reserved) for data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
-it. Candlestick is the only registered series type so far; the plugin extension point has no
-built-in users (see "Indicators" above for why) beyond `demo/index.html`'s example. No
-multi-pane support yet (volume shares the candlestick pane rather than getting its own). Not
-published to npm.
+it. Candlestick is the only registered series type so far; the plugin extension point (draw
+overlays plus, now, claimable pointer gestures for interactive tools — see "Plugins" above)
+has no built-in users (see "Indicators" above for why) beyond `demo/index.html`'s example. No
+concrete drawing tool ships yet, only the mechanism a trend line or similar would be built
+on. No multi-pane support yet (volume shares the candlestick pane rather than getting its
+own). Not published to npm.
 
 ## License
 

@@ -672,4 +672,125 @@ describe('CinderChart', () => {
       errorSpy.mockRestore();
     });
   });
+
+  describe('plugin pointer gestures (interactive plugins: drawing tools, etc.)', () => {
+    it('lets a plugin claim a mousedown and suppresses the chart\'s own panning for that gesture', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const before = chart.getVisibleRange().startIndex;
+      const onPointerMove = vi.fn();
+      const onPointerUp = vi.fn();
+
+      chart.addPlugin({ draw: () => {}, onPointerDown: () => true, onPointerMove, onPointerUp });
+
+      fireMouse(canvas, 'mousedown', { clientX: 100, clientY: 100 });
+      fireMouse(canvas, 'mousemove', { clientX: 250, clientY: 100 }); // would normally pan +150px right
+      fireMouse(window, 'mouseup', {});
+
+      expect(chart.getVisibleRange().startIndex).toBe(before); // no panning happened
+      expect(onPointerMove).toHaveBeenCalledOnce();
+      expect(onPointerUp).toHaveBeenCalledOnce();
+    });
+
+    it('leaves panning to the chart when a plugin does not claim the gesture', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const before = chart.getVisibleRange().startIndex;
+
+      chart.addPlugin({ draw: () => {}, onPointerDown: () => false });
+
+      fireMouse(canvas, 'mousedown', { clientX: 100, clientY: 100 });
+      fireMouse(canvas, 'mousemove', { clientX: 250, clientY: 100 });
+      fireMouse(window, 'mouseup', {});
+
+      expect(chart.getVisibleRange().startIndex).toBeLessThan(before); // panned normally
+    });
+
+    it('never offers a price-axis-strip click to plugins', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const onPointerDown = vi.fn();
+      chart.addPlugin({ draw: () => {}, onPointerDown });
+
+      fireMouse(canvas, 'mousedown', { clientX: 750, clientY: 100 }); // canvas is 800 wide, price axis strip is the last 64px
+      fireMouse(window, 'mouseup', {});
+
+      expect(onPointerDown).not.toHaveBeenCalled();
+    });
+
+    it('checks plugins in reverse-registration order and stops at the first to claim the gesture', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const first = { draw: () => {}, onPointerDown: vi.fn(() => false) };
+      const second = { draw: () => {}, onPointerDown: vi.fn(() => true) };
+      const third = { draw: () => {}, onPointerDown: vi.fn(() => false) };
+      chart.addPlugin(first);
+      chart.addPlugin(second);
+      chart.addPlugin(third);
+
+      fireMouse(canvas, 'mousedown', { clientX: 100, clientY: 100 });
+
+      // third (most recently added) is checked first, doesn't claim; second
+      // claims and stops the search; first (checked last) is never reached.
+      expect(third.onPointerDown).toHaveBeenCalledOnce();
+      expect(second.onPointerDown).toHaveBeenCalledOnce();
+      expect(first.onPointerDown).not.toHaveBeenCalled();
+
+      fireMouse(window, 'mouseup', {});
+    });
+
+    it('converts pointer position to a monotonic index and value', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const events: Array<{ index: number; value: number | null }> = [];
+      chart.addPlugin({
+        draw: () => {},
+        onPointerDown: (e) => {
+          events.push(e);
+          return false; // don't actually claim — just observing the converted event
+        },
+      });
+
+      fireMouse(canvas, 'mousedown', { clientX: 10, clientY: 10 });
+      fireMouse(window, 'mouseup', {});
+      fireMouse(canvas, 'mousedown', { clientX: 700, clientY: 300 });
+      fireMouse(window, 'mouseup', {});
+
+      expect(events).toHaveLength(2);
+      const [left, right] = events as [{ index: number; value: number | null }, { index: number; value: number | null }];
+      expect(left.index).toBeLessThan(right.index); // further right -> later index
+      expect(left.value).not.toBeNull();
+      expect(right.value).not.toBeNull();
+      expect(left.value!).toBeGreaterThan(right.value!); // higher on screen (smaller y) -> larger value
+    });
+
+    it('supports touch: claiming a touchstart suppresses panning, and touchend fires onPointerUp', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const before = chart.getVisibleRange().startIndex;
+      const onPointerUp = vi.fn();
+      chart.addPlugin({ draw: () => {}, onPointerDown: () => true, onPointerUp });
+      const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100)]));
+      onTouchMove(fakeTouchEvent([touchPoint(250, 100)]));
+      onTouchEnd(fakeTouchEvent([]));
+
+      expect(chart.getVisibleRange().startIndex).toBe(before);
+      expect(onPointerUp).toHaveBeenCalledOnce();
+    });
+
+    it('ends an active gesture (firing onPointerUp) when a second finger lands mid-gesture', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      const onPointerUp = vi.fn();
+      chart.addPlugin({ draw: () => {}, onPointerDown: () => true, onPointerUp });
+      const { onTouchStart } = chartTouchHandlers(chart);
+
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100)]));
+      onTouchStart(fakeTouchEvent([touchPoint(100, 100), touchPoint(200, 100)])); // second finger lands
+
+      expect(onPointerUp).toHaveBeenCalledOnce();
+    });
+  });
 });

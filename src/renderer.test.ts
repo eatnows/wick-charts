@@ -178,4 +178,32 @@ describe('ChartRenderer (candlestick)', () => {
       expect(timeChipCall![0]).toBeGreaterThanOrEqual(0); // left edge clamped, never negative
     });
   });
+
+  describe('plugin geometry: inverse coordinate mapping', () => {
+    it('gives plugins indexForX/valueForY that exactly invert xForIndex/yForValue', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      let drawCalled = false;
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        plugins: [
+          {
+            draw: (api) => {
+              drawCalled = true;
+              const x = api.xForIndex(1);
+              expect(api.indexForX(x)).toBeCloseTo(1, 10);
+
+              const y = api.yForValue(105);
+              expect(api.valueForY(y)).toBeCloseTo(105, 10);
+            },
+          },
+        ],
+      });
+
+      expect(drawCalled).toBe(true);
+    });
+  });
 });

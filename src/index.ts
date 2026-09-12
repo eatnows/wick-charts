@@ -6,7 +6,7 @@ import { toUnixSeconds } from './time.js';
 import { Viewport } from './viewport.js';
 import { loadWasm } from './wasm.js';
 import { importRealWasm } from './wasmImporter.js';
-import type { ChartPlugin } from './plugins/types.js';
+import type { ChartPlugin, ChartPointerEvent } from './plugins/types.js';
 import type { CandlestickStyle } from './series/candlestick.js';
 import type { SeriesDefinition } from './series/types.js';
 import type { Candle, CinderChartOptions, SeriesPoint, ValueRange } from './types.js';
@@ -71,6 +71,10 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   private viewport: Viewport;
   private hoverIndex: number | null = null;
   private plugins: ChartPlugin<TPoint>[] = [];
+  /** The plugin whose `onPointerDown` returned `true` for the pointer
+   * currently down, or `null` when no plugin has claimed the current
+   * gesture (the common case — the chart handles it itself). */
+  private activeGesturePlugin: ChartPlugin<TPoint> | null = null;
 
   private dragMode: DragMode = null;
   private lastX = 0;
@@ -250,7 +254,9 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   }
 
   private onMouseDown = (e: MouseEvent): void => {
-    const { x } = this.cursorPosition(e);
+    const { x, y } = this.cursorPosition(e);
+    if (x < this.renderer.chartWidth && this.dispatchPointerDown(x, y)) return;
+
     this.dragMode = x >= this.renderer.chartWidth ? 'value-scale' : 'pan';
     this.lastX = e.clientX;
     this.lastY = e.clientY;
@@ -262,6 +268,13 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   };
 
   private onMouseMove = (e: MouseEvent): void => {
+    if (this.activeGesturePlugin) {
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+      const { x, y } = this.cursorPosition(e);
+      this.activeGesturePlugin.onPointerMove?.(this.pointerEventAt(x, y));
+      return;
+    }
     if (this.dragMode === 'pan') {
       this.applyPanDelta(e.clientX, e.clientY);
       return;
@@ -273,7 +286,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     this.updateHover(e);
   };
 
-  private onMouseUp = (): void => {
+  private onMouseUp = (e: MouseEvent): void => {
+    if (this.activeGesturePlugin) {
+      const { x, y } = this.cursorPosition(e);
+      this.activeGesturePlugin.onPointerUp?.(this.pointerEventAt(x, y));
+      this.activeGesturePlugin = null;
+      this.scheduleRender();
+      return;
+    }
     this.dragMode = null;
   };
 
@@ -339,11 +359,16 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     if (e.touches.length === 2) {
       // A second finger landing takes over from whatever single-finger
       // gesture might have been in progress — including a pending
-      // long-press, or an already-active scrub, neither of which make
-      // sense once this becomes a pinch. Clearing the hover here (not
-      // just relying on the eventual touchend) matters because dragMode
-      // stops being 'scrub' the instant we set it to null two lines down.
+      // long-press, an already-active scrub, or a plugin gesture, none of
+      // which make sense once this becomes a pinch. Clearing the hover
+      // here (not just relying on the eventual touchend) matters because
+      // dragMode stops being 'scrub' the instant we set it to null two
+      // lines down.
       this.clearLongPressTimer();
+      if (this.activeGesturePlugin) {
+        this.activeGesturePlugin.onPointerUp?.(this.pointerEventAtLast());
+        this.activeGesturePlugin = null;
+      }
       if (this.hoverIndex !== null) {
         this.hoverIndex = null;
         this.scheduleRender();
@@ -355,10 +380,12 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
 
     if (e.touches.length === 1) {
       const touch = e.touches[0]!;
-      const { x } = this.cursorPosition(touch);
-      this.dragMode = x >= this.renderer.chartWidth ? 'value-scale' : 'pan';
+      const { x, y } = this.cursorPosition(touch);
       this.lastX = touch.clientX;
       this.lastY = touch.clientY;
+      if (x < this.renderer.chartWidth && this.dispatchPointerDown(x, y)) return;
+
+      this.dragMode = x >= this.renderer.chartWidth ? 'value-scale' : 'pan';
       this.touchStartX = touch.clientX;
       this.touchStartY = touch.clientY;
       this.ensureValueRangeOverride();
@@ -409,6 +436,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     if (e.touches.length !== 1) return;
     const touch = e.touches[0]!;
 
+    if (this.activeGesturePlugin) {
+      this.lastX = touch.clientX;
+      this.lastY = touch.clientY;
+      const { x, y } = this.cursorPosition(touch);
+      this.activeGesturePlugin.onPointerMove?.(this.pointerEventAt(x, y));
+      return;
+    }
+
     if (this.dragMode === 'pan') {
       const movedDistance = Math.hypot(touch.clientX - this.touchStartX, touch.clientY - this.touchStartY);
       if (movedDistance > LONG_PRESS_MOVE_TOLERANCE_PX) {
@@ -435,6 +470,14 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     if (e.touches.length < 2) this.pinchLastDistance = null;
     if (e.touches.length === 0) {
       this.clearLongPressTimer();
+      if (this.activeGesturePlugin) {
+        // touchend's own .touches is already empty — the lifted finger's
+        // last known position is whatever lastX/lastY was last set to (on
+        // touchstart or the most recent touchmove), not anything on this event.
+        this.activeGesturePlugin.onPointerUp?.(this.pointerEventAtLast());
+        this.activeGesturePlugin = null;
+        this.scheduleRender();
+      }
       // Scrubbing has no persistent state after the finger lifts — unlike
       // a mouse, which can keep hovering the last position, a lifted
       // finger isn't "still pointing" at anything, so the legend/crosshair
@@ -566,14 +609,75 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
    * already, seeding it from the current auto-fit range so the first pixel
    * of a drag doesn't jump. No-op on subsequent calls (already manual). */
   private ensureValueRangeOverride(): void {
-    if (this.viewport.valueRangeOverride || this.sorted.length === 0) return;
+    if (this.viewport.valueRangeOverride) return;
+    const range = this.frameValueRange();
+    if (range) this.viewport.setValueRangeOverride(range);
+  }
+
+  /** The value range the *next* render would use — whatever's already
+   * manually overridden, or a fresh auto-fit computed the same way
+   * `ChartRenderer.render` does. Used outside of a render pass itself, by
+   * anything that needs to convert a pixel position to a data value
+   * on-demand (`valueForY`, dispatched pointer events) rather than only
+   * during `render()`. `null` when there's nothing to compute one from. */
+  private frameValueRange(): ValueRange | null {
+    if (this.viewport.valueRangeOverride) return this.viewport.valueRangeOverride;
+    if (this.sorted.length === 0) return null;
     const startIdx = Math.max(0, Math.floor(this.viewport.startIndex));
     const endIdx = Math.min(this.sorted.length, Math.ceil(this.viewport.endIndex));
     const visible = this.sorted.slice(startIdx, endIdx);
-    if (visible.length === 0) return;
-    this.viewport.setValueRangeOverride(
-      this.seriesDefinition.getValueRange(visible, this.viewport.valueScaleFactor),
-    );
+    if (visible.length === 0) return null;
+    return this.seriesDefinition.getValueRange(visible, this.viewport.valueScaleFactor);
+  }
+
+  /** y pixel -> value in the range the next render would use. `null` if
+   * there's no data or no usable chart area to compute one against — see
+   * `ChartPointerEvent.value`. */
+  private valueForY(y: number): number | null {
+    const range = this.frameValueRange();
+    const chartHeight = this.renderer.chartHeight;
+    if (!range || chartHeight <= 0) return null;
+    return range.min + (1 - y / chartHeight) * (range.max - range.min);
+  }
+
+  /** x pixel -> global (possibly fractional) index — the exact inverse of
+   * the renderer's own `xForIndex`, so a pointer event lines up with
+   * wherever the chart itself would draw that index. */
+  private indexForX(x: number): number {
+    const slotWidth = this.renderer.chartWidth / this.viewport.visibleCount;
+    if (slotWidth <= 0) return this.viewport.startIndex;
+    return this.viewport.startIndex + (x - slotWidth / 2) / slotWidth;
+  }
+
+  private pointerEventAt(x: number, y: number): ChartPointerEvent {
+    return { x, y, index: this.indexForX(x), value: this.valueForY(y) };
+  }
+
+  /** Same as `pointerEventAt`, but starting from `lastX`/`lastY` (raw
+   * `clientX`/`clientY`, tracked on every pointer move) instead of
+   * already-converted chart-area pixels — for the two touch-end paths
+   * where there's no current touch position to read coordinates from. */
+  private pointerEventAtLast(): ChartPointerEvent {
+    const { x, y } = this.cursorPosition({ clientX: this.lastX, clientY: this.lastY });
+    return this.pointerEventAt(x, y);
+  }
+
+  /** Offers a pointer-down at `(x, y)` (chart-area pixels) to each plugin
+   * in reverse-registration order, stopping at the first one whose
+   * `onPointerDown` returns `true`. That plugin becomes
+   * `activeGesturePlugin` for the rest of the gesture; returns whether
+   * anyone claimed it, so callers know whether to skip their own default
+   * pan/price-scale handling. */
+  private dispatchPointerDown(x: number, y: number): boolean {
+    const event = this.pointerEventAt(x, y);
+    for (let i = this.plugins.length - 1; i >= 0; i--) {
+      const plugin = this.plugins[i]!;
+      if (plugin.onPointerDown?.(event)) {
+        this.activeGesturePlugin = plugin;
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Position in canvas backing-store pixels, accounting for the gap
