@@ -15,15 +15,51 @@ const DEFAULT_STYLE: CandlestickStyle = {
   downColor: '#ef5350',
 };
 
+/** Fraction of the chart's full height that volume bars occupy, measured
+ * up from the bottom. Candles still use the full height for their own
+ * price scale (unchanged from before volume bars existed) — the bars sit
+ * in this bottom margin at reduced opacity, so they read as a backdrop
+ * rather than competing with the candles for the same vertical space. */
+const VOLUME_AREA_HEIGHT_RATIO = 0.2;
+const VOLUME_BAR_OPACITY = 0.5;
+
 function getValueRange(visible: Candle[], scaleFactor: number): ValueRange {
   const rawMin = Math.min(...visible.map((c) => c.low));
   const rawMax = Math.max(...visible.map((c) => c.high));
   return fitRange(rawMin, rawMax, scaleFactor);
 }
 
+/** Draws a volume bar per candle that has one, scaled against the largest
+ * volume currently visible. A no-op — nothing reserved, nothing drawn —
+ * when not a single visible candle has `volume` set, so charts built from
+ * OHLC-only data look exactly as they did before this existed. */
+function drawVolumeBars(context: SeriesDrawContext<Candle>, style: CandlestickStyle): void {
+  const { ctx, visible, startIndex, xForIndex, slotWidth, chartHeight } = context;
+
+  const maxVolume = visible.reduce((max, c) => (c.volume !== undefined ? Math.max(max, c.volume) : max), 0);
+  if (maxVolume <= 0) return;
+
+  const areaHeight = chartHeight * VOLUME_AREA_HEIGHT_RATIO;
+  const bodyWidth = Math.max(1, slotWidth * 0.6);
+
+  ctx.globalAlpha = VOLUME_BAR_OPACITY;
+  visible.forEach((candle, i) => {
+    if (candle.volume === undefined) return;
+    const x = xForIndex(startIndex + i);
+    const barHeight = Math.max(1, (candle.volume / maxVolume) * areaHeight);
+    ctx.fillStyle = candle.close >= candle.open ? style.upColor : style.downColor;
+    ctx.fillRect(x - bodyWidth / 2, chartHeight - barHeight, bodyWidth, barHeight);
+  });
+  ctx.globalAlpha = 1;
+}
+
 function draw(context: SeriesDrawContext<Candle>, style: CandlestickStyle): void {
   const { ctx, visible, startIndex, xForIndex, slotWidth, yScale } = context;
   const bodyWidth = Math.max(1, slotWidth * 0.6);
+
+  // Drawn first so the (opaque) candles render on top of the (translucent)
+  // volume bars where the two overlap near the bottom of the chart.
+  drawVolumeBars(context, style);
 
   // Batched through mapMany (one call per array) rather than four map()
   // calls per candle in the loop below — the batch is what lets the WASM

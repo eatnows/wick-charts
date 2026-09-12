@@ -20,6 +20,7 @@ export interface FakeContext2D {
   font: string;
   textAlign: string;
   textBaseline: string;
+  globalAlpha: number;
 }
 
 export function createFakeContext(): FakeContext2D {
@@ -39,6 +40,7 @@ export function createFakeContext(): FakeContext2D {
     font: '',
     textAlign: '',
     textBaseline: '',
+    globalAlpha: 1,
   };
 }
 

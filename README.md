@@ -89,6 +89,11 @@ don't have to pre-convert whatever your data source hands you:
 { time: { businessDay: { year: 2024, month: 1, day: 1 } } } // calendar day, no time-of-day
 ```
 
+`volume` is entirely optional and per-candle: include it and a translucent bar is drawn for
+that candle in the bottom fifth of the chart, scaled against the largest volume currently in
+view; omit it (on some candles, or on all of them) and nothing is drawn or reserved for
+it — a dataset with no `volume` at all renders exactly as if the feature didn't exist.
+
 `setData()` sorts by time itself, so passing data in any order (or re-calling it with a fresh
 array) is safe. It resets pan/zoom/hover state — call it for a genuinely new dataset, and use
 `setDataLoader()` (below) to extend the current one instead.
@@ -250,13 +255,16 @@ cargo check --target wasm32-unknown-unknown        # compiles for the wasm targe
 
 Interactive on both mouse and touch: pan (drag or horizontal scroll/swipe), zoom (vertical
 scroll or a two-finger pinch, both cursor/midpoint-anchored), price-axis drag-to-scale,
-hover crosshair with an OHLC legend (a still finger held past a short delay substitutes for
-hover on touch, since touch has no hover state), and on-demand history loading via
-`setDataLoader`.
+hover crosshair with an OHLC(+volume) legend (a still finger held past a short delay
+substitutes for hover on touch, since touch has no hover state), and on-demand history
+loading via `setDataLoader`. Per-candle volume bars draw in the bottom fifth of the chart
+when a candle has `volume`, and are entirely omitted (nothing drawn, nothing reserved) for
+data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
 it. Candlestick is the only registered series type so far, and no concrete marker/annotation
 plugin ships yet — both extension points exist but have one and zero built-in users,
-respectively. No multi-pane indicators yet. Not published to npm.
+respectively. No multi-pane indicators yet (volume shares the candlestick pane rather than
+getting its own). Not published to npm.
 
 ## License
 
