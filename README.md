@@ -160,17 +160,30 @@ chart.addPlugin({
 Only call `xForIndex`/`yForValue` synchronously inside `draw()` — see "Plugins" below for why.
 `removePlugin()` takes the same object back out.
 
-A built-in indicator overlay ships as an example of a real (not toy) plugin:
+Built-in indicator overlays ship as examples of real (not toy) plugins — each its own module
+under `src/indicators/`, each independently configurable, and any number of instances (with
+any settings) can be added at once:
 
 ```ts
-import { createMovingAveragePlugin } from 'cinderchart';
+import { createMovingAveragePlugin, createBollingerBandsPlugin } from 'cinderchart';
 
 chart.addPlugin(createMovingAveragePlugin({ period: 20 })); // defaults: 20-period close SMA
+chart.addPlugin(createBollingerBandsPlugin({ period: 20, stdDevMultiplier: 2 }));
+
+// nothing stops adding a second, differently-configured instance of the same indicator
+chart.addPlugin(createMovingAveragePlugin({ period: 50, color: '#5b9bd5' }));
 ```
 
-`period`, `color`, `lineWidth`, and `accessor` (which candle field to average — defaults to
-`close`) are all optional overrides; see "Plugins" below for how it computes across the full
-loaded series rather than just what's currently visible.
+`createMovingAveragePlugin`'s `period`, `color`, `lineWidth`, and `accessor` (which candle
+field to average — defaults to `close`) are all optional overrides.
+`createBollingerBandsPlugin` adds `stdDevMultiplier` (how many standard deviations the bands
+sit from the middle line — defaults to 2), separate `middleColor`/`bandColor`/`fillColor`,
+and `fillOpacity` for the shaded area between the bands. Both compute across the full loaded
+series rather than just what's currently visible — see "Plugins" below for why that matters.
+
+Adding another indicator (RSI, MACD, ...) means writing one more file next to these two, with
+its own options interface — nothing about the plugin system itself needs to change, and
+existing indicator instances are unaffected.
 
 ### Cleanup
 
@@ -251,16 +264,37 @@ above the `WASM_SCALE_THRESHOLD` point count, `yForValue` closes over a WASM-bac
 that's freed the moment `draw()` returns, and calling it later throws rather than touching
 freed memory.
 
-`src/plugins/movingAverage.ts`'s `createMovingAveragePlugin` is the reference
-implementation — a simple moving average over closing price (or any other candle field via
-`accessor`). It reads straight off `allPoints` rather than being handed the series
+`src/indicators/` holds the concrete plugins built this way — kept separate from
+`src/plugins/types.ts`'s generic extension-point contract so "what a plugin can do" and
+"what indicators actually exist" don't live in the same file. Each indicator is one module
+exporting a `create<Name>Plugin(options)` factory and its own `<Name>PluginOptions` type,
+independent of every other indicator's option shape (same reasoning as `create<Name>Chart`
+per series type, just one layer up):
+
+- `movingAverage.ts`'s `createMovingAveragePlugin` — a simple moving average over closing
+  price (or any other candle field via `accessor`).
+- `bollingerBands.ts`'s `createBollingerBandsPlugin` — a middle SMA plus upper/lower bands
+  `stdDevMultiplier` standard deviations away, with the area between them filled. Reuses
+  `computeSma` for the middle band; `rollingStdDev` (local to that file) computes the bands
+  around it, sharing `computeSma`'s exact warm-up convention rather than deriving its own.
+- `runs.ts`'s `forEachValidRun` — walks a range and calls back once per contiguous run of
+  "valid" (non-warm-up) indices. Both indicators above need this: a line can't be drawn
+  straight through a NaN gap, and Bollinger Bands' fill needs whole valid runs to build a
+  closed polygon from, not just individual points.
+
+Both indicators read straight off `allPoints` rather than being handed the series
 separately, which is *why* `PluginRenderApi` carries the full loaded array and not just the
-visible one: an average needs `period - 1` points of history *before* the visible window to
-be accurate at its left edge, and the alternative (a plugin tracking the chart's data
-independently) would break the moment `setDataLoader` extends it. The average itself goes
-through `src/indicators/sma.ts`'s `computeSma` — JS below `WASM_SMA_THRESHOLD` points, the
-Rust crate's `sma` export above it, the same hybrid dispatch `hybridScale.ts` uses for
-coordinate scaling.
+visible one: a `period`-window calculation needs `period - 1` points of history *before* the
+visible window to be accurate at its left edge, and the alternative (a plugin tracking the
+chart's data independently) would break the moment `setDataLoader` extends it. The averaging
+itself goes through `src/indicators/sma.ts`'s `computeSma` — JS below `WASM_SMA_THRESHOLD`
+points, the Rust crate's `sma` export above it, the same hybrid dispatch `hybridScale.ts`
+uses for coordinate scaling.
+
+Adding a further indicator (RSI, MACD, ...) is: one new file next to these three implementing
+`ChartPlugin<Candle>`, exporting its own options type and `create<Name>Plugin` factory. No
+change to `ChartPlugin`, `PluginRenderApi`, `CinderChart`, or `ChartRenderer` — the extension
+point is already exactly what these two needed.
 
 ```bash
 # TypeScript
@@ -287,10 +321,12 @@ the bottom fifth of the chart when a candle has `volume`, and are entirely omitt
 drawn, nothing reserved) for data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
 it — the moving-average overlay's own average (`createMovingAveragePlugin`) hybridizes the
-same way once the series is long enough. Candlestick is the only registered series type so
-far; the plugin extension point has one concrete user (the moving average) but no marker or
-annotation plugin yet. No multi-pane indicators yet (volume and the moving average both
-share the candlestick pane rather than getting their own). Not published to npm.
+same way once the series is long enough; Bollinger Bands' standard deviation
+(`createBollingerBandsPlugin`) is JS-only so far. Candlestick is the only registered series
+type so far; the plugin extension point has two concrete indicator overlays (moving average,
+Bollinger Bands) but no marker or annotation plugin yet. No multi-pane indicators yet (volume
+and both overlays share the candlestick pane rather than getting their own). Not published
+to npm.
 
 ## License
 

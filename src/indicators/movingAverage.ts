@@ -1,5 +1,6 @@
-import { computeSma } from '../indicators/sma.js';
-import type { ChartPlugin, PluginRenderApi } from './types.js';
+import { computeSma } from './sma.js';
+import { forEachValidRun } from './runs.js';
+import type { ChartPlugin, PluginRenderApi } from '../plugins/types.js';
 import type { Candle } from '../types.js';
 
 export interface MovingAveragePluginOptions {
@@ -34,6 +35,10 @@ const DEFAULT_ACCESSOR = (candle: Candle): number => candle.close;
  * same as the renderer recomputes its own value range every frame —
  * simple and correct; `computeSma` reaches for the WASM path once the
  * series is long enough for that to matter (see `src/indicators/sma.ts`).
+ *
+ * Every option here (`period`, `color`, `lineWidth`, `accessor`) is a
+ * plain constructor argument, not global state — build as many instances
+ * with as many different settings as you like and add them all.
  */
 export function createMovingAveragePlugin(options: MovingAveragePluginOptions = {}): ChartPlugin<Candle> {
   const period = options.period ?? DEFAULT_PERIOD;
@@ -53,28 +58,22 @@ export function createMovingAveragePlugin(options: MovingAveragePluginOptions = 
 
       ctx.strokeStyle = color;
       ctx.lineWidth = lineWidth;
-      ctx.beginPath();
 
-      // NaN marks the warm-up region (see computeSma) — breaks the line
-      // into a fresh subpath rather than drawing through a gap.
-      let drawing = false;
-      for (let i = visibleStartIndex; i < visibleEndIndex; i++) {
-        const value = values[i];
-        if (value === undefined || Number.isNaN(value)) {
-          drawing = false;
-          continue;
-        }
-        const x = xForIndex(i);
-        const y = yForValue(value);
-        if (drawing) {
-          ctx.lineTo(x, y);
-        } else {
-          ctx.moveTo(x, y);
-          drawing = true;
-        }
-      }
-
-      ctx.stroke();
+      forEachValidRun(
+        visibleStartIndex,
+        visibleEndIndex,
+        (i) => !Number.isNaN(values[i]),
+        (runStart, runEnd) => {
+          ctx.beginPath();
+          for (let i = runStart; i < runEnd; i++) {
+            const x = xForIndex(i);
+            const y = yForValue(values[i]!);
+            if (i === runStart) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        },
+      );
     },
   };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMovingAveragePlugin } from './movingAverage';
 import { createFakeContext } from '../testHelpers';
-import type { PluginRenderApi } from './types';
+import type { PluginRenderApi } from '../plugins/types';
 import type { Candle } from '../types';
 import type { FakeContext2D } from '../testHelpers';
 

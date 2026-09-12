@@ -8,9 +8,11 @@ export interface FakeContext2D {
   clearRect: ReturnType<typeof vi.fn>;
   fillRect: ReturnType<typeof vi.fn>;
   beginPath: ReturnType<typeof vi.fn>;
+  closePath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
   stroke: ReturnType<typeof vi.fn>;
+  fill: ReturnType<typeof vi.fn>;
   fillText: ReturnType<typeof vi.fn>;
   measureText: ReturnType<typeof vi.fn>;
   save: ReturnType<typeof vi.fn>;
@@ -30,9 +32,11 @@ export function createFakeContext(): FakeContext2D {
     clearRect: vi.fn(),
     fillRect: vi.fn(),
     beginPath: vi.fn(),
+    closePath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     stroke: vi.fn(),
+    fill: vi.fn(),
     fillText: vi.fn(),
     measureText: vi.fn().mockReturnValue({ width: 40 } as TextMetrics),
     save: vi.fn(),
