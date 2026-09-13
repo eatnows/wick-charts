@@ -8,20 +8,26 @@ export interface CandlestickStyle {
   upColor: string;
   /** Candle body/wick color for down (close < open) bars. */
   downColor: string;
+  /** Candle body/wick width as a fraction of the available per-candle slot
+   * width (the rest is inter-candle gap). Defaults to 0.6. */
+  bodyWidthRatio: number;
+  /** Fraction of the chart's full height that volume bars occupy, measured
+   * up from the bottom. Candles still use the full height for their own
+   * price scale regardless of this value — the bars sit in this bottom
+   * margin, layered underneath. Defaults to 0.2. */
+  volumeAreaHeightRatio: number;
+  /** Opacity (0-1) of the volume bars, so they read as a backdrop rather
+   * than competing with the candles drawn over them. Defaults to 0.5. */
+  volumeBarOpacity: number;
 }
 
 const DEFAULT_STYLE: CandlestickStyle = {
   upColor: '#26a69a',
   downColor: '#ef5350',
+  bodyWidthRatio: 0.6,
+  volumeAreaHeightRatio: 0.2,
+  volumeBarOpacity: 0.5,
 };
-
-/** Fraction of the chart's full height that volume bars occupy, measured
- * up from the bottom. Candles still use the full height for their own
- * price scale (unchanged from before volume bars existed) — the bars sit
- * in this bottom margin at reduced opacity, so they read as a backdrop
- * rather than competing with the candles for the same vertical space. */
-const VOLUME_AREA_HEIGHT_RATIO = 0.2;
-const VOLUME_BAR_OPACITY = 0.5;
 
 function getValueRange(visible: Candle[], scaleFactor: number): ValueRange {
   const rawMin = Math.min(...visible.map((c) => c.low));
@@ -39,10 +45,10 @@ function drawVolumeBars(context: SeriesDrawContext<Candle>, style: CandlestickSt
   const maxVolume = visible.reduce((max, c) => (c.volume !== undefined ? Math.max(max, c.volume) : max), 0);
   if (maxVolume <= 0) return;
 
-  const areaHeight = chartHeight * VOLUME_AREA_HEIGHT_RATIO;
-  const bodyWidth = Math.max(1, slotWidth * 0.6);
+  const areaHeight = chartHeight * style.volumeAreaHeightRatio;
+  const bodyWidth = Math.max(1, slotWidth * style.bodyWidthRatio);
 
-  ctx.globalAlpha = VOLUME_BAR_OPACITY;
+  ctx.globalAlpha = style.volumeBarOpacity;
   visible.forEach((candle, i) => {
     if (candle.volume === undefined) return;
     const x = xForIndex(startIndex + i);
@@ -55,7 +61,7 @@ function drawVolumeBars(context: SeriesDrawContext<Candle>, style: CandlestickSt
 
 function draw(context: SeriesDrawContext<Candle>, style: CandlestickStyle): void {
   const { ctx, visible, startIndex, xForIndex, slotWidth, yScale } = context;
-  const bodyWidth = Math.max(1, slotWidth * 0.6);
+  const bodyWidth = Math.max(1, slotWidth * style.bodyWidthRatio);
 
   // Drawn first so the (opaque) candles render on top of the (translucent)
   // volume bars where the two overlap near the bottom of the chart.

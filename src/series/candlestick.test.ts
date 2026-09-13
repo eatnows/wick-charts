@@ -112,5 +112,39 @@ describe('candlestickSeries', () => {
       // 1 volume bar (only the first candle has volume) + 2 bodies
       expect(ctx.fillRect.mock.calls.length).toBe(3);
     });
+
+    it('respects a custom volumeAreaHeightRatio and volumeBarOpacity', () => {
+      const ctx = createFakeContext();
+      const visible = [candle(1, 100, 110, 95, 105, 100)];
+      const style = { ...candlestickSeries.defaultStyle, volumeAreaHeightRatio: 0.5, volumeBarOpacity: 0.25 };
+      let observedAlpha: number | undefined;
+      ctx.fillRect.mockImplementation(() => {
+        observedAlpha ??= ctx.globalAlpha; // capture alpha at the moment the bar is drawn
+      });
+
+      candlestickSeries.draw(drawContext(visible, ctx), style);
+
+      // chartHeight=100 (see drawContext), ratio 0.5 -> areaHeight=50; volume is the
+      // only (and therefore max) one, so the bar fills the whole area: height 50
+      const [, , , barHeight] = ctx.fillRect.mock.calls[0] as [number, number, number, number];
+      expect(barHeight).toBeCloseTo(50);
+      expect(observedAlpha).toBe(0.25);
+    });
+  });
+
+  describe('customizable style: bodyWidthRatio', () => {
+    it('widens the candle body/volume-bar width with a larger bodyWidthRatio', () => {
+      const ctx = createFakeContext();
+      const visible = [candle(1, 100, 110, 95, 105, 100)];
+      const wideStyle = { ...candlestickSeries.defaultStyle, bodyWidthRatio: 0.9 };
+
+      candlestickSeries.draw(drawContext(visible, ctx), wideStyle);
+
+      // drawContext uses slotWidth: 10 -> default ratio 0.6 gives width 6, this ratio gives 9
+      const [, , volumeBarWidth] = ctx.fillRect.mock.calls[0] as [number, number, number, number];
+      const [, , bodyWidth] = ctx.fillRect.mock.calls[1] as [number, number, number, number];
+      expect(volumeBarWidth).toBeCloseTo(9);
+      expect(bodyWidth).toBeCloseTo(9);
+    });
   });
 });

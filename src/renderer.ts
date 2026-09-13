@@ -4,24 +4,45 @@ import { formatPrice, niceTicks } from './priceAxis.js';
 import type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
 import type { Scale } from './hybridScale.js';
 import type { SeriesDefinition } from './series/types.js';
-import type { CinderChartOptions, SeriesPoint } from './types.js';
+import type {
+  ChartAxisOptions,
+  ChartCrosshairOptions,
+  ChartFontOptions,
+  ChartLegendOptions,
+  CinderChartOptions,
+  SeriesPoint,
+} from './types.js';
 import type { Viewport } from './viewport.js';
 
 const DEFAULT_BACKGROUND = 'transparent';
 
-const TIME_AXIS_HEIGHT = 24;
-const PRICE_AXIS_WIDTH = 64;
-const AXIS_MAX_TICKS = 6;
-const PRICE_TICK_COUNT = 5;
-const AXIS_TEXT_COLOR = '#787878';
-const AXIS_LINE_COLOR = '#33333333';
-const GRID_LINE_COLOR = '#2a2a2a55';
-const CROSSHAIR_COLOR = '#9090904d';
-const LEGEND_TEXT_COLOR = '#c8c8c8';
-const CROSSHAIR_LABEL_BG = '#3a3a3a';
-const CROSSHAIR_LABEL_TEXT = '#f0f0f0';
-const LABEL_PADDING_X = 4;
-const LABEL_PADDING_Y = 3;
+const DEFAULT_FONT: Required<ChartFontOptions> = {
+  family: 'sans-serif',
+  axisSize: 10,
+  legendSize: 11,
+};
+
+const DEFAULT_AXIS: Required<ChartAxisOptions> = {
+  priceWidth: 64,
+  timeHeight: 24,
+  priceTickCount: 5,
+  timeMaxTicks: 6,
+  textColor: '#787878',
+  lineColor: '#33333333',
+  gridLineColor: '#2a2a2a55',
+};
+
+const DEFAULT_CROSSHAIR: Required<ChartCrosshairOptions> = {
+  lineColor: '#9090904d',
+  labelBackground: '#3a3a3a',
+  labelTextColor: '#f0f0f0',
+  labelPaddingX: 4,
+  labelPaddingY: 3,
+};
+
+const DEFAULT_LEGEND: Required<ChartLegendOptions> = {
+  textColor: '#c8c8c8',
+};
 
 export interface RenderInput<TPoint extends SeriesPoint> {
   /** Every point, sorted ascending by normalized time. */
@@ -48,11 +69,21 @@ export interface RenderInput<TPoint extends SeriesPoint> {
  * Stateless per call otherwise — all pan/zoom/hover state lives in
  * `Viewport` and `CinderChart`; this class only turns a snapshot of that
  * state into pixels.
+ *
+ * Every visual constant below (fonts, axis sizing/coloring, crosshair
+ * coloring/padding, legend color) is resolved once at construction from
+ * `CinderChartOptions.font`/`axis`/`crosshair`/`legend`, each merged field
+ * by field over its own defaults — nothing here is a hardcoded module
+ * constant a caller can't reach.
  */
 export class ChartRenderer<TPoint extends SeriesPoint> {
   private ctx: CanvasRenderingContext2D;
   private background: string;
   private style: unknown;
+  private font: Required<ChartFontOptions>;
+  private axis: Required<ChartAxisOptions>;
+  private crosshair: Required<ChartCrosshairOptions>;
+  private legend: Required<ChartLegendOptions>;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -64,21 +95,33 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     this.ctx = ctx;
     this.background = options.background ?? DEFAULT_BACKGROUND;
     this.style = { ...(seriesDefinition.defaultStyle as object), ...(options.style ?? {}) };
+    this.font = { ...DEFAULT_FONT, ...options.font };
+    this.axis = { ...DEFAULT_AXIS, ...options.axis };
+    this.crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
+    this.legend = { ...DEFAULT_LEGEND, ...options.legend };
   }
 
   /** Pixel width of the point-plotting area — excludes the price-axis
    * strip on the right. Exposed so `CinderChart` can convert cursor pixel
    * positions to point indices / values for hit-testing and dragging. */
   get chartWidth(): number {
-    return Math.max(0, this.canvas.width - PRICE_AXIS_WIDTH);
+    return Math.max(0, this.canvas.width - this.axis.priceWidth);
   }
 
   get chartHeight(): number {
-    return Math.max(0, this.canvas.height - TIME_AXIS_HEIGHT);
+    return Math.max(0, this.canvas.height - this.axis.timeHeight);
   }
 
   get priceAxisWidth(): number {
-    return PRICE_AXIS_WIDTH;
+    return this.axis.priceWidth;
+  }
+
+  private axisFont(): string {
+    return `${this.font.axisSize}px ${this.font.family}`;
+  }
+
+  private legendFont(): string {
+    return `${this.font.legendSize}px ${this.font.family}`;
   }
 
   render(input: RenderInput<TPoint>): void {
@@ -207,7 +250,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
    * range — shared by the axis ticks and the crosshair's price label so
    * both display the same value with the same rounding. */
   private currentPriceStep(priceMin: number, priceMax: number): number {
-    const ticks = niceTicks(priceMin, priceMax, PRICE_TICK_COUNT);
+    const ticks = niceTicks(priceMin, priceMax, this.axis.priceTickCount);
     return ticks.length > 1 ? ticks[1]! - ticks[0]! : 0;
   }
 
@@ -219,16 +262,16 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     chartWidth: number,
     chartHeight: number,
   ): void {
-    const { ctx } = this;
-    const ticks = niceTicks(priceMin, priceMax, PRICE_TICK_COUNT);
+    const { ctx, axis } = this;
+    const ticks = niceTicks(priceMin, priceMax, axis.priceTickCount);
 
-    ctx.strokeStyle = AXIS_LINE_COLOR;
+    ctx.strokeStyle = axis.lineColor;
     ctx.beginPath();
     ctx.moveTo(chartWidth + 0.5, 0);
     ctx.lineTo(chartWidth + 0.5, chartHeight);
     ctx.stroke();
 
-    ctx.font = '10px sans-serif';
+    ctx.font = this.axisFont();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
@@ -236,13 +279,13 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       const y = yScale.map(value);
       if (y < 0 || y > chartHeight) continue;
 
-      ctx.strokeStyle = GRID_LINE_COLOR;
+      ctx.strokeStyle = axis.gridLineColor;
       ctx.beginPath();
       ctx.moveTo(0, y + 0.5);
       ctx.lineTo(chartWidth, y + 0.5);
       ctx.stroke();
 
-      ctx.fillStyle = AXIS_TEXT_COLOR;
+      ctx.fillStyle = axis.textColor;
       ctx.fillText(formatPrice(value, step), chartWidth + 6, y);
     }
   }
@@ -255,22 +298,22 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     chartWidth: number,
     xForIndex: (globalIndex: number) => number,
   ): void {
-    const { ctx } = this;
+    const { ctx, axis } = this;
     const visibleTimes = times.slice(startIdx, startIdx + visibleCount);
     const spanSeconds = visibleTimes[visibleTimes.length - 1]! - visibleTimes[0]!;
 
-    ctx.strokeStyle = AXIS_LINE_COLOR;
+    ctx.strokeStyle = axis.lineColor;
     ctx.beginPath();
     ctx.moveTo(0, chartHeight + 0.5);
     ctx.lineTo(chartWidth, chartHeight + 0.5);
     ctx.stroke();
 
-    ctx.fillStyle = AXIS_TEXT_COLOR;
-    ctx.font = '10px sans-serif';
+    ctx.fillStyle = axis.textColor;
+    ctx.font = this.axisFont();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
-    for (const localIndex of pickTickIndices(visibleCount, AXIS_MAX_TICKS)) {
+    for (const localIndex of pickTickIndices(visibleCount, axis.timeMaxTicks)) {
       const x = xForIndex(startIdx + localIndex);
       const label = formatAxisLabel(visibleTimes[localIndex]!, spanSeconds);
       ctx.fillText(label, x, chartHeight + 6);
@@ -288,10 +331,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     chartWidth: number,
     chartHeight: number,
   ): void {
-    const { ctx, canvas, seriesDefinition, style } = this;
+    const { ctx, canvas, seriesDefinition, style, crosshair } = this;
 
     ctx.save();
-    ctx.strokeStyle = CROSSHAIR_COLOR;
+    ctx.strokeStyle = crosshair.lineColor;
     ctx.setLineDash([4, 4]);
 
     ctx.beginPath();
@@ -326,10 +369,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     const parts = seriesDefinition.formatLegend?.(point, style) ?? [];
     if (parts.length === 0) return;
 
-    ctx.font = '11px sans-serif';
+    ctx.font = this.legendFont();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = LEGEND_TEXT_COLOR;
+    ctx.fillStyle = this.legend.textColor;
     ctx.fillText(parts.join('   '), 8, 8);
   }
 
@@ -337,35 +380,35 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
    * horizontal line — drawn over `renderPriceAxis`'s own tick labels so the
    * hovered value reads clearly even where it lands between two ticks. */
   private renderPriceLabelChip(text: string, y: number, chartWidth: number): void {
-    const { ctx } = this;
-    ctx.font = '10px sans-serif';
-    const chipHeight = 10 + LABEL_PADDING_Y * 2;
+    const { ctx, font, crosshair } = this;
+    ctx.font = this.axisFont();
+    const chipHeight = font.axisSize + crosshair.labelPaddingY * 2;
 
-    ctx.fillStyle = CROSSHAIR_LABEL_BG;
+    ctx.fillStyle = crosshair.labelBackground;
     ctx.fillRect(chartWidth, y - chipHeight / 2, this.priceAxisWidth, chipHeight);
 
-    ctx.fillStyle = CROSSHAIR_LABEL_TEXT;
+    ctx.fillStyle = crosshair.labelTextColor;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, chartWidth + LABEL_PADDING_X, y);
+    ctx.fillText(text, chartWidth + crosshair.labelPaddingX, y);
   }
 
   /** The highlighted time-axis label under the crosshair's vertical line.
    * Clamped so its background chip stays fully on-screen even when the
    * hovered point sits at the very first or last visible index. */
   private renderTimeLabelChip(text: string, x: number, chartHeight: number, canvasWidth: number): void {
-    const { ctx } = this;
-    ctx.font = '10px sans-serif';
-    const chipWidth = ctx.measureText(text).width + LABEL_PADDING_X * 2;
-    const chipHeight = 10 + LABEL_PADDING_Y * 2;
+    const { ctx, font, crosshair } = this;
+    ctx.font = this.axisFont();
+    const chipWidth = ctx.measureText(text).width + crosshair.labelPaddingX * 2;
+    const chipHeight = font.axisSize + crosshair.labelPaddingY * 2;
     const chipLeft = Math.min(Math.max(x - chipWidth / 2, 0), canvasWidth - chipWidth);
 
-    ctx.fillStyle = CROSSHAIR_LABEL_BG;
+    ctx.fillStyle = crosshair.labelBackground;
     ctx.fillRect(chipLeft, chartHeight, chipWidth, chipHeight);
 
-    ctx.fillStyle = CROSSHAIR_LABEL_TEXT;
+    ctx.fillStyle = crosshair.labelTextColor;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(text, chipLeft + LABEL_PADDING_X, chartHeight + LABEL_PADDING_Y);
+    ctx.fillText(text, chipLeft + crosshair.labelPaddingX, chartHeight + crosshair.labelPaddingY);
   }
 }

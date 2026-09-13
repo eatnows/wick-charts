@@ -100,17 +100,53 @@ array) is safe. It resets pan/zoom/hover state — call it for a genuinely new d
 
 ### Styling
 
+Every visual aspect of the chart is an option — nothing is a fixed constant you can't reach.
+They split into two groups: `style` is specific to the active series (candlestick's colors,
+body width, volume bars); `background`/`font`/`axis`/`crosshair`/`legend` are engine-level,
+shared by whatever series is active, and merged field by field over their own defaults so you
+only need to specify what you're changing:
+
 ```ts
 const chart = createCandlestickChart(canvas, {
   background: '#0d1117',
-  style: { upColor: '#26a69a', downColor: '#ef5350' },
+  style: {
+    upColor: '#26a69a',
+    downColor: '#ef5350',
+    bodyWidthRatio: 0.6, // candle width as a fraction of its slot; the rest is gap
+    volumeAreaHeightRatio: 0.2, // how much of the chart height volume bars occupy
+    volumeBarOpacity: 0.5,
+  },
+  font: {
+    family: 'sans-serif',
+    axisSize: 10, // axis ticks + crosshair axis labels
+    legendSize: 11, // the hover legend
+  },
+  axis: {
+    priceWidth: 64, // width, in px, of the price-axis strip on the right
+    timeHeight: 24, // height, in px, of the time-axis strip at the bottom
+    priceTickCount: 5,
+    timeMaxTicks: 6,
+    textColor: '#787878',
+    lineColor: '#33333333',
+    gridLineColor: '#2a2a2a55',
+  },
+  crosshair: {
+    lineColor: '#9090904d',
+    labelBackground: '#3a3a3a',
+    labelTextColor: '#f0f0f0',
+    labelPaddingX: 4,
+    labelPaddingY: 3,
+  },
+  legend: {
+    textColor: '#c8c8c8',
+  },
 });
 ```
 
-`background` is transparent by default. `style` is merged over the series's own defaults, so
-you only need to specify what you're overriding. `createCandlestickChart` type-checks `style`
-against `CandlestickStyle`; the more general `new CinderChart(canvas, { type: 'candlestick',
-style })` also works but doesn't — see "Series types" below for why, if you're curious.
+Every value shown above is the built-in default — this example changes nothing; it's a
+reference for what exists. `createCandlestickChart` type-checks `style` against
+`CandlestickStyle`; the more general `new CinderChart(canvas, { type: 'candlestick', style })`
+also works but doesn't — see "Series types" below for why, if you're curious.
 
 ### Reading chart state
 
@@ -239,6 +275,20 @@ wouldn't clean up on its own.
 The WASM module loads in the background the moment a `CinderChart` is constructed
 (`src/wasm.ts` + `src/wasmImporter.ts`) and is never awaited on the render path — every
 frame before it resolves just uses the JS scale, so there's no load-time flash or blocking.
+
+### Engine-level styling vs. series style
+
+`ChartRenderer` resolves `CinderChartOptions.font`/`axis`/`crosshair`/`legend` once, in its
+constructor (each merged field-by-field over its own `DEFAULT_*` object in `renderer.ts`),
+into private fields it reads from everywhere it used to reference a module-level constant —
+axis strip sizing (`chartWidth`/`chartHeight` derive from `axis.priceWidth`/`timeHeight`
+instead of fixed numbers), tick counts, every color, every font string, crosshair label
+padding. None of it is series-specific: a future line series draws through the exact same
+axes, crosshair, and legend chrome a candlestick chart does, so this styling lives one level
+above `SeriesDefinition`, not inside it. `CandlestickStyle` (`src/series/candlestick.ts`) is
+the series-level counterpart — `bodyWidthRatio`, `volumeAreaHeightRatio`, `volumeBarOpacity`
+alongside the original `upColor`/`downColor` — for the handful of things that only make sense
+for *this* series (a line series wouldn't have a body width or volume bars to configure).
 
 ### Series types
 

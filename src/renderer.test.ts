@@ -223,4 +223,155 @@ describe('ChartRenderer (candlestick)', () => {
       expect(drawCalled).toBe(true);
     });
   });
+
+  describe('customizable styling (font/axis/crosshair/legend options)', () => {
+    it('resizes the price-axis strip and time-axis strip via axis.priceWidth/timeHeight', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, { axis: { priceWidth: 100, timeHeight: 40 } });
+      expect(renderer.chartWidth).toBe(800 - 100);
+      expect(renderer.chartHeight).toBe(400 - 40);
+      expect(renderer.priceAxisWidth).toBe(100);
+    });
+
+    it('uses a custom font family and axis font size for axis tick labels', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, { font: { family: 'monospace', axisSize: 14 } });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+      });
+      // the axis font is the last one set on a no-hover render (see renderTimeAxis)
+      expect(ctx.font).toBe('14px monospace');
+    });
+
+    it('uses a custom legend font size while hovering', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, { font: { family: 'monospace', legendSize: 16 } });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+      // the legend font is the last one set once a hover legend draws
+      expect(ctx.font).toBe('16px monospace');
+    });
+
+    it('uses custom axis line and text colors', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        axis: { lineColor: '#111111', textColor: '#222222' },
+      });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+      });
+      // the time axis's boundary-line stroke and tick fillStyle are the last ones set
+      expect(ctx.strokeStyle).toBe('#111111');
+      expect(ctx.fillStyle).toBe('#222222');
+    });
+
+    it('uses a custom crosshair line color and label chip padding', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        crosshair: { lineColor: '#333333', labelPaddingX: 10 },
+      });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+
+      expect(ctx.strokeStyle).toBe('#333333'); // last stroke color set is the crosshair's
+
+      const priceLabelCall = ctx.fillText.mock.calls.find((call) => call[2] === 100) as
+        | [string, number, number]
+        | undefined;
+      expect(priceLabelCall).toBeDefined();
+      expect(priceLabelCall![1]).toBe(renderer.chartWidth + 10); // custom labelPaddingX
+    });
+
+    it('uses custom crosshair label chip background/text colors and vertical padding', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        crosshair: { labelBackground: '#444444', labelTextColor: '#555555', labelPaddingY: 10 },
+      });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+
+      // the last fillRect (the time-axis label chip's background) uses labelBackground,
+      // and its height reflects the custom vertical padding (axisSize 10 + 10*2 = 30)
+      const lastFillRect = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      expect(lastFillRect[3]).toBe(30);
+      // fillStyle right after the last fillRect call is the background color set for it
+      expect(ctx.fillStyle).not.toBe('#444444'); // fillStyle is reassigned to labelTextColor right after for the text
+      const priceLabelText = ctx.fillText.mock.calls.find((call) => call[2] === 100)?.[0];
+      expect(priceLabelText).toBeDefined();
+    });
+
+    it('uses a custom legend text color', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, { legend: { textColor: '#666666' } });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+      expect(ctx.fillStyle).toBe('#666666'); // the legend's fillStyle is the last one set
+    });
+
+    it('draws fewer axis tick labels with a smaller priceTickCount/timeMaxTicks', () => {
+      const manyCandles = Array.from({ length: 100 }, (_, i) => candle(i, 100 + i, 105 + i, 95 + i, 102 + i));
+      const manyTimes = manyCandles.map((c) => c.time as number);
+
+      const fewTicks = new ChartRenderer(canvas, candlestickSeries, {
+        axis: { priceTickCount: 2, timeMaxTicks: 2 },
+      });
+      fewTicks.render({
+        sorted: manyCandles,
+        times: manyTimes,
+        viewport: new Viewport(manyCandles.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+      });
+      const fewCallCount = ctx.fillText.mock.calls.length;
+
+      ctx.fillText.mockClear();
+      const manyTicks = new ChartRenderer(canvas, candlestickSeries, {
+        axis: { priceTickCount: 10, timeMaxTicks: 10 },
+      });
+      manyTicks.render({
+        sorted: manyCandles,
+        times: manyTimes,
+        viewport: new Viewport(manyCandles.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+      });
+      const manyCallCount = ctx.fillText.mock.calls.length;
+
+      expect(manyCallCount).toBeGreaterThan(fewCallCount);
+    });
+  });
 });
