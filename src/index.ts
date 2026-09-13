@@ -20,6 +20,7 @@ import type {
   WickChartOptions,
   SeriesPoint,
   ValueRange,
+  WickTime,
 } from './types.js';
 
 export type {
@@ -86,6 +87,37 @@ const LONG_PRESS_MS = 350;
  * as a real drag, not a hold — cancels the pending long-press timer so a
  * fast pan gesture never flips into scrub mid-motion. */
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+
+/** First index in `times` (ascending) whose value is `>= target`, or
+ * `times.length` if every value is smaller — the standard binary
+ * lower-bound, O(log n) rather than a linear scan over what can be a
+ * multi-thousand-point loaded series. Used by `setVisibleTimeRange` to
+ * resolve a `from` time to its start index. */
+function lowerBound(times: number[], target: number): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (times[mid]! < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** First index in `times` (ascending) whose value is `> target`, or
+ * `times.length` if none is — the exclusive end boundary for a `to` time,
+ * so a range `[lowerBound(from), upperBound(to))` includes every point
+ * with a time in `[from, to]` inclusive on both ends. */
+function upperBound(times: number[], target: number): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (times[mid]! <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 
 /**
  * Interactive chart: drag to pan, wheel to zoom, drag the price-axis strip
@@ -317,6 +349,62 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
       endIndex: this.viewport.endIndex,
       visibleCount: this.viewport.visibleCount,
     };
+  }
+
+  /**
+   * Jumps the visible pan/zoom window directly to `[startIndex, endIndex)`
+   * — the programmatic, index-based counterpart to `getVisibleRange()`'s
+   * own shape, for anything that already knows the target in index terms
+   * (a minimap click, a saved bookmark). Clamped the same way a drag/zoom
+   * gesture already is (see `Viewport.setVisibleIndexRange`) rather than
+   * throwing on an out-of-range request. Clears the current hover, the
+   * same way `setData()` does — a jump is a discontinuous change, and a
+   * hover position computed for the window before it is no longer
+   * meaningful until the pointer actually moves again.
+   *
+   * Indices aren't a safe way to sync two independent `WickChart`
+   * instances sharing a time axis — they may have loaded different
+   * amounts of history via `setDataLoader`, so the same index means a
+   * different point in each. Use `setVisibleTimeRange` for that instead.
+   */
+  setVisibleRange(range: { startIndex: number; endIndex: number }): this {
+    this.viewport.setVisibleIndexRange(range.startIndex, range.endIndex, this.sorted.length);
+    this.hoverIndex = null;
+    this.hoverY = null;
+    this.scheduleRender();
+    return this;
+  }
+
+  /**
+   * The time-based counterpart to `setVisibleRange` — jumps to whatever
+   * window of the currently loaded data falls within `[from, to]`
+   * (inclusive both ends), resolved against this chart's own loaded
+   * points. This is what makes syncing one chart's pan/zoom onto another
+   * independent `WickChart` instance sharing a time axis possible: read
+   * the source chart's `getVisibleTimeRange()` and pass it straight to
+   * this one, and the two stay in sync by time even if they've loaded
+   * different amounts of history. A no-op if no data has been loaded yet.
+   */
+  setVisibleTimeRange(range: { from: WickTime; to: WickTime }): this {
+    if (this.times.length === 0) return this;
+    const fromSeconds = toUnixSeconds(range.from);
+    const toSeconds = toUnixSeconds(range.to);
+    return this.setVisibleRange({
+      startIndex: lowerBound(this.times, fromSeconds),
+      endIndex: upperBound(this.times, toSeconds),
+    });
+  }
+
+  /** The currently visible window's time span, in unix seconds — `null`
+   * when there's no data to report one for. The time-based counterpart to
+   * `getVisibleRange()`, and the read side `setVisibleTimeRange` is meant
+   * to be paired with for syncing one chart's pan/zoom onto another. */
+  getVisibleTimeRange(): { from: number; to: number } | null {
+    if (this.sorted.length === 0) return null;
+    const startIdx = Math.max(0, Math.floor(this.viewport.startIndex));
+    const endIdx = Math.min(this.sorted.length, Math.ceil(this.viewport.endIndex));
+    if (endIdx <= startIdx) return null;
+    return { from: this.times[startIdx]!, to: this.times[endIdx - 1]! };
   }
 
   /** The value axis's manual range once the user has dragged or scaled it

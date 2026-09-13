@@ -269,6 +269,96 @@ describe('WickChart', () => {
     });
   });
 
+  describe('setVisibleRange / setVisibleTimeRange', () => {
+    it('setVisibleRange jumps directly to the requested index window', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(200));
+
+      chart.setVisibleRange({ startIndex: 50, endIndex: 100 });
+
+      expect(chart.getVisibleRange()).toEqual({ startIndex: 50, endIndex: 100, visibleCount: 50 });
+    });
+
+    it('setVisibleRange clamps an out-of-bounds request instead of throwing', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(100));
+
+      expect(() => chart.setVisibleRange({ startIndex: -20, endIndex: 300 })).not.toThrow();
+      const range = chart.getVisibleRange();
+      expect(range.startIndex).toBeGreaterThanOrEqual(0);
+      expect(range.endIndex).toBeLessThanOrEqual(100);
+    });
+
+    it('setVisibleRange clears the current hover (a stale hover no longer matches the new window)', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(100));
+      chart.render();
+      fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 });
+      expect(chart.getHoveredPoint()).not.toBeNull();
+
+      chart.setVisibleRange({ startIndex: 0, endIndex: 20 });
+      expect(chart.getHoveredPoint()).toBeNull();
+    });
+
+    it('getVisibleTimeRange reports the real time span of what setVisibleRange just showed', () => {
+      const chart = new WickChart(canvas);
+      // makeSeries uses time = index (in unix seconds), so index and time
+      // line up exactly — lets this test assert precise values.
+      chart.setData(makeSeries(200));
+
+      chart.setVisibleRange({ startIndex: 50, endIndex: 100 });
+
+      expect(chart.getVisibleTimeRange()).toEqual({ from: 50, to: 99 });
+    });
+
+    it('getVisibleTimeRange returns null before any data is loaded', () => {
+      const chart = new WickChart(canvas);
+      expect(chart.getVisibleTimeRange()).toBeNull();
+    });
+
+    it('setVisibleTimeRange resolves a [from, to] time span to the matching index window', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(200)); // time = index, 0..199
+
+      chart.setVisibleTimeRange({ from: 50, to: 99 });
+
+      expect(chart.getVisibleRange()).toEqual({ startIndex: 50, endIndex: 100, visibleCount: 50 });
+    });
+
+    it('setVisibleTimeRange is a no-op before any data is loaded', () => {
+      const chart = new WickChart(canvas);
+      expect(() => chart.setVisibleTimeRange({ from: 0, to: 100 })).not.toThrow();
+      expect(chart.getPointCount()).toBe(0);
+    });
+
+    it('round-trips through getVisibleTimeRange/setVisibleTimeRange to sync one chart onto another', () => {
+      const { canvas: c1 } = createTestCanvas(800, 400);
+      const { canvas: c2 } = createTestCanvas(800, 400);
+      const source = new WickChart(c1);
+      const target = new WickChart(c2);
+      // Different amounts of loaded history — the exact scenario time-based
+      // sync exists for: the same index would point at different candles.
+      source.setData(makeSeries(200, 1000));
+      target.setData(makeSeries(500, 700));
+
+      source.setVisibleRange({ startIndex: 80, endIndex: 130 });
+      const sourceRange = source.getVisibleTimeRange()!;
+
+      target.setVisibleTimeRange(sourceRange);
+
+      expect(target.getVisibleTimeRange()).toEqual(sourceRange);
+    });
+
+    it('setVisibleTimeRange accepts every WickTime shape, not just unix seconds', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(200)); // time = index, 0..199 (unix seconds)
+
+      chart.setVisibleTimeRange({ from: { unixMs: 50_000 }, to: '1970-01-01T00:01:39Z' }); // 50s .. 99s
+
+      expect(chart.getVisibleRange()).toEqual({ startIndex: 50, endIndex: 100, visibleCount: 50 });
+    });
+  });
+
   describe('setDataLoader', () => {
     // A freshly-`setData()`'d chart is always pinned to the most recent
     // candle, so its "after" edge (remaining candles past what's visible)
