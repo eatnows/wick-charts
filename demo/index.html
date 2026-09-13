@@ -21,6 +21,9 @@
     <h1>wick-charts</h1>
     <p>On-demand history loading — starts with 200 candles, more streams in as you pan</p>
     <p><a href="./line.html" style="color:#58a6ff">line series demo →</a></p>
+    <button id="invert-toggle" style="margin-left:auto;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">
+      Flip value axis
+    </button>
   </header>
   <div class="hint">
     Drag: <b>chart area</b> pans/tilts the price range · <b>right price axis</b> scales it vertically ·
@@ -233,6 +236,13 @@
   window.addEventListener('resize', () => {
     resizeCanvas();
     chart.render();
+  });
+
+  // A live toggle, not a construction-time-only option, is the whole
+  // point of invertValueAxis — see "Inverting the value axis" in the
+  // README. Flips both the main pane and the RSI pane below it.
+  document.getElementById('invert-toggle').addEventListener('click', () => {
+    chart.setInvertValueAxis(!chart.isValueAxisInverted());
   });
 </script>
 </body>

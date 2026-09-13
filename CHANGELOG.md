@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`invertValueAxis`** (`WickChartOptions.invertValueAxis`,
+  `WickChart.setInvertValueAxis`/`isValueAxisInverted`): mirrors the value
+  axis top-to-bottom across the whole pane stack, with no change to the
+  underlying data — a candle's open/close relationship (and up/down color)
+  and every legend value still reflect the real numbers. A live toggle,
+  not a construction-time-only option: switching it doesn't lose the
+  current pan/zoom position or a manual value-range override, the same
+  way `setPluginVisible` toggles a plugin without losing its state. See
+  "Inverting the value axis" in the README.
+
+### Refactored
+
+- Consolidated four independently-derived copies of the same pixel<->value
+  formula (`ChartRenderer`'s hover-crosshair readout and per-pane
+  `PluginRenderApi.valueForY`, `WickChart`'s own pointer-event `value`/
+  `yForValue`) into `src/valueAxis.ts`'s `valueToPixel`/`pixelToValue` —
+  the change that made `invertValueAxis` safe to add without missing a
+  spot.
+
 ## [0.5.0] — 2026-09-13
 
 ### Added

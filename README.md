@@ -19,6 +19,7 @@ npm install wick-charts
   - [Candle data](#candle-data)
   - [Line charts](#line-charts)
   - [Styling](#styling)
+  - [Inverting the value axis](#inverting-the-value-axis)
   - [Reading chart state](#reading-chart-state)
   - [Loading more history on demand](#loading-more-history-on-demand)
   - [Extending: plugins](#extending-plugins)
@@ -226,6 +227,34 @@ the right of it, and clamped so it never runs off the chart's edges. `createCand
 type-checks `style` against
 `CandlestickStyle`; the more general `new WickChart(canvas, { type: 'candlestick', style })`
 also works but doesn't — see "Series types" below for why, if you're curious.
+
+### Inverting the value axis
+
+`invertValueAxis` mirrors the value axis top-to-bottom — every pane's higher values render
+lower on screen instead of higher, useful for a "what if this series had moved the opposite
+way" view:
+
+```ts
+const chart = createCandlestickChart(canvas, { invertValueAxis: true });
+```
+
+Unlike the style options above, it's meant to be flipped live rather than fixed at
+construction — `setInvertValueAxis(boolean)`/`isValueAxisInverted()` let a UI toggle it on an
+existing chart without losing the current pan/zoom position or manual value-range override,
+the same way `setPluginVisible` toggles a plugin without losing its state:
+
+```ts
+toggleButton.addEventListener('click', () => {
+  chart.setInvertValueAxis(!chart.isValueAxisInverted());
+});
+```
+
+Only where each value renders is mirrored — the underlying data isn't. A candle's open/close
+relationship (and therefore its up/down color) still reflects the real values, `formatLegend`
+still shows the real OHLC numbers, and dragging the price axis or panning vertically still
+feels like "grab and slide" in the same screen direction as before; only the sign of what that
+drag does to the value range flips internally to keep it feeling that way. Applies to every
+pane in the stack (see "Multi-pane indicators" below) consistently, not just the main one.
 
 ### Reading chart state
 
@@ -644,8 +673,9 @@ concrete drawing tool ships yet, only the mechanism a trend line or similar woul
 on. `addPane`/`removePane` let a plugin-drawn indicator (RSI, MACD, ...) reserve its own
 horizontal strip with an independent value axis — see "Multi-pane indicators" above; volume
 still shares the candlestick pane rather than getting its own, since it draws through the
-series itself, not a pane-targeted plugin. See [CHANGELOG.md](./CHANGELOG.md) for what shipped
-in each release.
+series itself, not a pane-targeted plugin. `invertValueAxis`/`setInvertValueAxis` mirror the
+whole stack's value axis top-to-bottom without touching the underlying data — see "Inverting
+the value axis" above. See [CHANGELOG.md](./CHANGELOG.md) for what shipped in each release.
 
 ## License
 
