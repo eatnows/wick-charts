@@ -16,8 +16,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
   and every legend value still reflect the real numbers. A live toggle,
   not a construction-time-only option: switching it doesn't lose the
   current pan/zoom position or a manual value-range override, the same
-  way `setPluginVisible` toggles a plugin without losing its state. See
-  "Inverting the value axis" in the README.
+  way `setPluginVisible` toggles a plugin without losing its state.
+  Candlestick's volume bars are a known exception — bottom-anchored
+  independent of the value-axis scale, so they don't flip with everything
+  else. See "Inverting the value axis" in the README.
 
 ### Refactored
 

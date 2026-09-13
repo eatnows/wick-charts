@@ -256,6 +256,11 @@ feels like "grab and slide" in the same screen direction as before; only the sig
 drag does to the value range flips internally to keep it feeling that way. Applies to every
 pane in the stack (see "Multi-pane indicators" below) consistently, not just the main one.
 
+One known exception: candlestick's volume bars aren't mapped through the value-axis scale at
+all (they're drawn in a fixed-height strip anchored to the bottom of the pane, independent of
+price — see "Series types" under Architecture), so they stay bottom-anchored regardless of
+`invertValueAxis` rather than flipping to the top with everything else.
+
 ### Reading chart state
 
 Useful for building UI around the canvas (a legend, a toolbar, a "jump to latest" button)
