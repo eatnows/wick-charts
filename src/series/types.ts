@@ -1,5 +1,5 @@
 import type { Scale } from '../hybridScale.js';
-import type { SeriesPoint, ValueRange } from '../types.js';
+import type { LegendFormatContext, SeriesPoint, ValueRange } from '../types.js';
 
 export type { ValueRange } from '../types.js';
 
@@ -65,6 +65,11 @@ export interface SeriesDefinition<TPoint extends SeriesPoint, TStyle> {
   draw(context: SeriesDrawContext<TPoint>, style: TStyle): void;
   /** Builds the hover/crosshair legend text for one point, one string per
    * segment (joined with spacing by the renderer). Omit to draw the
-   * crosshair line with no legend text. */
-  formatLegend?(point: TPoint, style: TStyle): string[];
+   * crosshair line with no legend text. `context` gives access to
+   * neighboring points (see `LegendFormatContext`) for anything the
+   * hovered point alone can't express, like a value compared against the
+   * previous point — this built-in series doesn't need it, but a custom
+   * one can. `WickChartOptions.formatLegend`, when set, overrides this per
+   * chart instance rather than per series type — see its own doc comment. */
+  formatLegend?(point: TPoint, style: TStyle, context: LegendFormatContext<TPoint>): string[];
 }

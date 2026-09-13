@@ -13,6 +13,7 @@ import type {
   ChartCrosshairOptions,
   ChartFontOptions,
   ChartLegendOptions,
+  LegendFormatContext,
   ResolvedPaneOptions,
   WickChartOptions,
   SeriesPoint,
@@ -144,6 +145,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
    * opposite way" view a user flips on and off), so it doesn't get the
    * "resolved once in the constructor" treatment those get. */
   private invertValueAxis: boolean;
+  /** Per-instance override of `seriesDefinition.formatLegend` — see
+   * `WickChartOptions.formatLegend`'s own doc comment for why this exists
+   * as a chart-instance option rather than only a series-type one. */
+  private formatLegendOverride?: WickChartOptions['formatLegend'];
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -157,6 +162,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     this.style = { ...(seriesDefinition.defaultStyle as object), ...(options.style ?? {}) };
     this.axis = { ...DEFAULT_AXIS, ...options.axis };
     this.invertValueAxis = options.invertValueAxis ?? false;
+    this.formatLegendOverride = options.formatLegend;
     this.font = { ...DEFAULT_FONT, ...options.font };
     this.crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
     this.legend = { ...DEFAULT_LEGEND, ...options.legend };
@@ -355,7 +361,12 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
         // horizontal line, price-label chip, and OHLC legend stay scoped
         // to the main pane only — an indicator pane's own hover readout,
         // if it wants one, is the job of whatever plugin draws into it.
-        const legendParts = seriesDefinition.formatLegend?.(sorted[hoverIndex]!, style) ?? [];
+        // `formatLegendOverride`, when set, replaces the series's own
+        // formatLegend entirely for this chart instance rather than
+        // merging with it — see `WickChartOptions.formatLegend`.
+        const formatLegend = this.formatLegendOverride ?? seriesDefinition.formatLegend;
+        const legendContext: LegendFormatContext<TPoint> = { index: hoverIndex, allPoints: sorted };
+        const legendParts = formatLegend?.(sorted[hoverIndex]!, style, legendContext) ?? [];
         crosshairRenderer.render({
           x: xForIndex(hoverIndex),
           timeSeconds: times[hoverIndex]!,

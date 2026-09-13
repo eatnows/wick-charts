@@ -754,6 +754,82 @@ describe('ChartRenderer (candlestick)', () => {
     });
   });
 
+  describe('formatLegend override (WickChartOptions.formatLegend)', () => {
+    it('replaces the series-level formatLegend entirely for this chart instance', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        formatLegend: (candle) => [`종가 ${(candle as Candle).close}`],
+      });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+        panes: [],
+      });
+
+      const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
+      // The candlestick series's own "O "/"C " labels must not appear —
+      // the override replaces formatLegend, it doesn't merge with it.
+      expect(texts.some((t) => t.startsWith('O '))).toBe(false);
+      expect(texts).toContain(`종가 ${SAMPLE[1]!.close}`);
+    });
+
+    it('gives the override the hovered point\'s index and every loaded point, for values derived from neighbors', () => {
+      let seenIndex: number | undefined;
+      let seenAllPoints: readonly Candle[] | undefined;
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        formatLegend: (candle, _style, context) => {
+          seenIndex = context.index;
+          seenAllPoints = context.allPoints as readonly Candle[];
+          const prev = context.allPoints[context.index - 1] as Candle | undefined;
+          const pctChange = prev ? (((candle as Candle).close - prev.close) / prev.close) * 100 : null;
+          return [pctChange === null ? 'n/a' : `(${pctChange.toFixed(2)}%)`];
+        },
+      });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 2,
+        hoverY: 100,
+        plugins: [],
+        panes: [],
+      });
+
+      expect(seenIndex).toBe(2);
+      expect(seenAllPoints).toBe(SAMPLE);
+      const expectedPct = (((SAMPLE[2]!.close - SAMPLE[1]!.close) / SAMPLE[1]!.close) * 100).toFixed(2);
+      const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
+      expect(texts).toContain(`(${expectedPct}%)`);
+    });
+
+    it('returning an empty array suppresses the tooltip, the same as a series with no formatLegend', () => {
+      const renderInput = {
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+        panes: [],
+      };
+
+      const suppressed = new ChartRenderer(canvas, candlestickSeries, { formatLegend: () => [] });
+      suppressed.render(renderInput);
+      const fillRectCallsSuppressed = ctx.fillRect.mock.calls.length;
+      ctx.fillRect.mockClear();
+
+      const withDefaultLegend = new ChartRenderer(canvas, candlestickSeries);
+      withDefaultLegend.render(renderInput);
+      // The default legend draws a tooltip box (fillRect) the suppressed
+      // override skips entirely — same effect a series with no
+      // formatLegend at all already has.
+      expect(fillRectCallsSuppressed).toBeLessThan(ctx.fillRect.mock.calls.length);
+    });
+  });
+
   describe('invertValueAxis', () => {
     it('mirrors a plugin\'s yForValue/valueForY top-to-bottom compared to the default orientation', () => {
       const normal = new ChartRenderer(canvas, candlestickSeries);

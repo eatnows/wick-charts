@@ -180,6 +180,23 @@ export interface ResolvedPaneOptions {
   getValueRange: () => ValueRange;
 }
 
+/**
+ * Context `SeriesDefinition.formatLegend` and `WickChartOptions.formatLegend`
+ * get alongside the hovered point and its style — everything needed to
+ * compute something derived from *neighboring* points (a percent change
+ * vs. the previous point, say), which the hovered point alone can't
+ * express. The same `allPoints`/index-into-it shape `SeriesDrawContext`
+ * already gives a series's own `draw()`, reused here so both call sites
+ * answer "what else is near this point" the same way.
+ */
+export interface LegendFormatContext<TPoint extends SeriesPoint = SeriesPoint> {
+  /** Global index of the hovered point in `allPoints`. */
+  index: number;
+  /** Every point currently loaded (not just visible), sorted ascending by
+   * time — the same array `SeriesDrawContext.allPoints` is. */
+  allPoints: readonly TPoint[];
+}
+
 export interface WickChartOptions {
   /**
    * Which registered series type to render this chart as (see
@@ -210,6 +227,30 @@ export interface WickChartOptions {
   crosshair?: ChartCrosshairOptions;
   /** Hover legend coloring. Merged over the built-in defaults field by field. */
   legend?: ChartLegendOptions;
+  /**
+   * Overrides the active series's own `formatLegend` (see
+   * `SeriesDefinition.formatLegend`) for this chart instance specifically —
+   * the hover legend's text, one string per line. `SeriesDefinition.formatLegend`
+   * is a shared default for every chart of that series *type* (registered
+   * once via `registerSeries`); this is a per-*instance* override for
+   * whatever varies by app/session instead of by chart type — localized
+   * labels, or a value derived from neighboring points via
+   * `context.allPoints`/`context.index` (a percent change vs. the previous
+   * point, say). Returning an empty array suppresses the built-in tooltip
+   * entirely, the same as a series with no `formatLegend` at all — draw
+   * your own via a `ChartPlugin` instead if you need a different layout,
+   * not just different text.
+   *
+   * Declared as a method (not an arrow-typed property) so, like
+   * `SeriesDefinition.formatLegend`, it type-checks bivariantly rather than
+   * contravariantly — the same tradeoff `style`'s untyped
+   * `Record<string, unknown>` already makes here: `new WickChart(canvas, {
+   * type, formatLegend })` doesn't verify `point`/`style` actually match
+   * `type`'s series, but `createCandlestickChart`/`createLineChart` narrow
+   * both to the concrete series's own types, the same way they narrow
+   * `style` — see their own doc comments.
+   */
+  formatLegend?(point: SeriesPoint, style: unknown, context: LegendFormatContext<SeriesPoint>): string[];
   /**
    * Mirrors the value axis top-to-bottom — every pane's higher values
    * render lower on screen instead of higher, with no change to the

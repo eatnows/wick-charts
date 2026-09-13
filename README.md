@@ -19,6 +19,7 @@ npm install wick-charts
   - [Candle data](#candle-data)
   - [Line charts](#line-charts)
   - [Styling](#styling)
+  - [Customizing the hover legend text](#customizing-the-hover-legend-text)
   - [High-DPI displays (devicePixelRatio)](#high-dpi-displays-devicepixelratio)
   - [Inverting the value axis](#inverting-the-value-axis)
   - [Reading chart state](#reading-chart-state)
@@ -235,6 +236,45 @@ Every `px` value above (`font.axisSize`/`legendSize`, `axis.priceWidth`/`timeHei
 `LineStyle.lineWidth`) is authored in **CSS pixels** — the intuitive "how big should this look
 on screen" unit — regardless of the canvas's actual backing-store resolution. See the next
 section for what that means in practice.
+
+### Customizing the hover legend text
+
+`legend` above only styles the tooltip's box (colors, padding, offset) — the *text* inside it
+comes from the active series's `formatLegend`, which candlestick/line both ship with a fixed,
+English, OHLC-shaped default. An app that needs different text — localized labels, or a value
+computed from neighboring points, like percent change against the previous candle — overrides
+it per chart instance via `formatLegend`:
+
+```ts
+const chart = createCandlestickChart(canvas, {
+  formatLegend(candle, style, { index, allPoints }) {
+    const prev = allPoints[index - 1];
+    const change = prev ? (((candle.close - prev.close) / prev.close) * 100).toFixed(2) : null;
+    return [
+      `시가 ${candle.open.toLocaleString()}`,
+      `고가 ${candle.high.toLocaleString()}`,
+      `저가 ${candle.low.toLocaleString()}`,
+      `종가 ${candle.close.toLocaleString()}${change === null ? '' : ` (${change}%)`}`,
+    ];
+  },
+});
+```
+
+This replaces the series's `formatLegend` outright for this one chart instance — it doesn't
+merge with the built-in OHLC lines, so return every line you want shown. `allPoints` is every
+point currently loaded (not just visible), the same array a `ChartPlugin` reads through
+`PluginRenderApi.allPoints`; `index` is `candle`'s position in it, so `allPoints[index - 1]` is
+the previous point regardless of where the user has panned/zoomed to.
+
+`SeriesDefinition.formatLegend` (what candlestick/line ship with) is a shared default for every
+chart of that *type*; `WickChartOptions.formatLegend` is the per-*instance* override above it —
+reach for the latter for anything that varies by app, session, or locale rather than by chart
+type. `createCandlestickChart`/`createLineChart` type-check `formatLegend`'s `point`/`style`
+against the concrete series, the same way they type-check `style` itself.
+
+Return `[]` (or `undefined`) to suppress the built-in tooltip entirely — useful if you'd rather
+draw a completely custom tooltip layout yourself via a [`ChartPlugin`](#extending-plugins),
+using `chart.getHoveredPoint()` to know what's hovered.
 
 ### High-DPI displays (devicePixelRatio)
 
