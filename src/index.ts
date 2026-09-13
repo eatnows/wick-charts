@@ -1,5 +1,6 @@
 import type { DataLoader } from './dataSource.js';
 import { mergeSeriesPoints } from './mergeSeries.js';
+import { computePaneLayout } from './paneLayout.js';
 import { ChartRenderer } from './renderer.js';
 import { getSeries } from './series/registry.js';
 import { toUnixSeconds } from './time.js';
@@ -426,7 +427,7 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
       this.viewport.pan(-deltaXDevice / slotWidth, this.sorted.length);
     }
 
-    const chartHeight = this.renderer.chartHeight;
+    const chartHeight = this.mainPaneHeight();
     if (chartHeight > 0 && this.viewport.valueRangeOverride) {
       const deltaYDevice = deltaYCss * this.devicePixelScaleY();
       const { min, max } = this.viewport.valueRangeOverride;
@@ -737,12 +738,26 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
     return this.seriesDefinition.getValueRange(visible, this.viewport.valueScaleFactor);
   }
 
+  /** The main price pane's own pixel height for the *next* render — as
+   * opposed to `this.renderer.chartHeight`, which is the whole pane
+   * stack's height (main pane plus every declared indicator pane below
+   * it). Every pixel<->value conversion outside of `ChartRenderer.render`
+   * itself (price-axis drag-to-scale, `ChartPointerEvent.value`, ...) is
+   * about the main pane specifically — pointer gestures and price-axis
+   * dragging aren't pane-aware yet, so they only ever mean the main price
+   * pane — and has to divide by this, not the full stack, or dragging
+   * would run at the wrong speed (or a hovered value would come out
+   * wrong) as soon as an app adds its first indicator pane. */
+  private mainPaneHeight(): number {
+    return computePaneLayout(this.panes, this.renderer.chartHeight).main.height;
+  }
+
   /** y pixel -> value in the range the next render would use. `null` if
    * there's no data or no usable chart area to compute one against — see
    * `ChartPointerEvent.value`. */
   private valueForY(y: number): number | null {
     const range = this.frameValueRange();
-    const chartHeight = this.renderer.chartHeight;
+    const chartHeight = this.mainPaneHeight();
     if (!range || chartHeight <= 0) return null;
     return range.min + (1 - y / chartHeight) * (range.max - range.min);
   }
@@ -771,7 +786,7 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
    * `valueForY` returns `null` for. */
   private yForValue(value: number): number | null {
     const range = this.frameValueRange();
-    const chartHeight = this.renderer.chartHeight;
+    const chartHeight = this.mainPaneHeight();
     if (!range || chartHeight <= 0) return null;
     return chartHeight * (1 - (value - range.min) / (range.max - range.min));
   }

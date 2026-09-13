@@ -240,7 +240,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       );
 
       const priceStep = this.currentPriceStep(valueMin, valueMax);
-      this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, 0);
+      this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, mainRect.top);
       for (const { rect, min, max, scale } of paneScales) {
         this.renderPaneSeparator(rect.top, chartWidth);
         const step = this.currentPriceStep(min, max);

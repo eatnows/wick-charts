@@ -838,6 +838,34 @@ describe('WickChart', () => {
       expect(chart.getPanes()).toEqual([{ id: 'rsi', heightRatio: 0.25 }]);
     });
 
+    it('accounts for a shrunk main pane in pointer-event values (regression: previously divided by the full stack height)', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(50));
+
+      // Any mousedown seeds a deterministic manual value-range override
+      // (see ensureValueRangeOverride) — do this before adding the pane so
+      // the override itself doesn't depend on pane layout.
+      fireMouse(canvas, 'mousedown', { clientX: 400, clientY: 200 });
+      fireMouse(window, 'mouseup', {});
+      const range = chart.getValueRangeOverride();
+      expect(range).not.toBeNull();
+      const mid = (range!.min + range!.max) / 2;
+
+      chart.addPane({ id: 'rsi', heightRatio: 0.5 }); // well under the 0.8 stack-share cap
+
+      let seenValue: number | null = null;
+      chart.addPlugin({ draw: () => {}, onPointerDown: (e) => ((seenValue = e.value), false) });
+
+      const stackHeight = 400 - 24; // canvas height (400) minus the default time-axis strip (24)
+      const mainPaneHeight = stackHeight * 0.5;
+      // The vertical midpoint of the *main pane* (not the full stack) should
+      // read back the override range's own midpoint.
+      fireMouse(canvas, 'mousedown', { clientX: 100, clientY: mainPaneHeight / 2 });
+      fireMouse(window, 'mouseup', {});
+
+      expect(seenValue).toBeCloseTo(mid, 5);
+    });
+
     it('getPanes returns panes in declaration order', () => {
       const chart = new WickChart(canvas);
       chart.addPane({ id: 'volume', heightRatio: 0.15 });
