@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>wick-charts pan/zoom sync demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif}
+  .wrap{display:flex;flex-direction:column;height:100%}
+  header{padding:14px 18px;border-bottom:1px solid #21262d;flex-shrink:0}
+  header h1{font-size:14px;margin:0;font-weight:600}
+  header p{font-size:12px;margin:4px 0 0;color:#8b949e}
+  .hint{font-size:11.5px;color:#8b949e;padding:8px 18px;border-bottom:1px solid #21262d;flex-shrink:0}
+  .hint b{color:#c9d1d9}
+  .panes{flex:1;min-height:0;display:flex;flex-direction:column}
+  .pane{flex:1;min-height:0;position:relative;border-bottom:1px solid #21262d}
+  .pane:last-child{border-bottom:none}
+  .pane-label{position:absolute;top:8px;left:8px;font-size:11px;color:#8b949e;z-index:1;pointer-events:none}
+  canvas{width:100%;height:100%;display:block;cursor:crosshair}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>wick-charts — pan/zoom sync</h1>
+    <p>Two independent WickChart instances, kept in sync via setVisibleTimeRange/getVisibleTimeRange</p>
+  </header>
+  <div class="hint">
+    Drag/zoom/scroll the <b>top</b> chart ("driver") — the <b>bottom</b> one ("follower") tracks it by
+    time, not index, even though it has loaded a smaller window of history. This is the concrete use
+    case <code>setVisibleTimeRange</code>/<code>getVisibleTimeRange</code> exist for: syncing two
+    independent chart instances that share a time axis but not necessarily the same loaded range —
+    see "Reading chart state" in the README.
+  </div>
+  <div class="panes">
+    <div class="pane"><span class="pane-label">driver</span><canvas id="driver"></canvas></div>
+    <div class="pane"><span class="pane-label">follower</span><canvas id="follower"></canvas></div>
+  </div>
+</div>
+
+<script type="module">
+  import { createCandlestickChart } from '../dist/index.js';
+
+  function seededRandom(seed) {
+    let s = seed >>> 0;
+    return () => {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+      return s / 0xffffffff;
+    };
+  }
+
+  const DAY_MS = 86400000;
+  const EPOCH = new Date('2024-01-01T00:00:00Z').getTime();
+
+  function candleAtIndex(i) {
+    const rand = seededRandom(1000 + i);
+    const base = 71000 + Math.sin(i / 40) * 4000 + Math.cos(i / 17) * 1500;
+    const open = base + (rand() - 0.5) * 400;
+    const close = Math.max(1000, open + (rand() - 0.5) * 1800);
+    const high = Math.max(open, close) + rand() * 500;
+    const low = Math.max(1, Math.min(open, close) - rand() * 500);
+    return { time: new Date(EPOCH + i * DAY_MS).toISOString(), open, high, low, close };
+  }
+
+  function generateRange(fromIndex, toIndexInclusive) {
+    const out = [];
+    for (let i = fromIndex; i <= toIndexInclusive; i++) out.push(candleAtIndex(i));
+    return out;
+  }
+
+  function resizeCanvas(canvas, holder) {
+    const rect = holder.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+  }
+
+  const driverCanvas = document.getElementById('driver');
+  const followerCanvas = document.getElementById('follower');
+  const driverHolder = driverCanvas.parentElement;
+  const followerHolder = followerCanvas.parentElement;
+
+  resizeCanvas(driverCanvas, driverHolder);
+  resizeCanvas(followerCanvas, followerHolder);
+
+  const driver = createCandlestickChart(driverCanvas);
+  const follower = createCandlestickChart(followerCanvas);
+
+  // The driver has the full generated range loaded; the follower only a
+  // smaller window of it — deliberately unequal, so the same index would
+  // point at a different candle in each. Only time-based sync is correct
+  // here, which is the whole point of this demo.
+  driver.setData(generateRange(0, 999));
+  follower.setData(generateRange(200, 700));
+
+  driver.render();
+  follower.render();
+
+  // wick-charts has no viewport-change event yet (see the README/CHANGELOG
+  // for what's shipped) — polling once per animation frame is the
+  // straightforward way to mirror a live drag/zoom today. Cheap: both
+  // reads and the write are plain object/array access, no canvas work
+  // unless the range actually changed.
+  let lastSynced = null;
+  function syncLoop() {
+    const range = driver.getVisibleTimeRange();
+    if (range && (!lastSynced || range.from !== lastSynced.from || range.to !== lastSynced.to)) {
+      follower.setVisibleTimeRange(range);
+      lastSynced = range;
+    }
+    requestAnimationFrame(syncLoop);
+  }
+  requestAnimationFrame(syncLoop);
+
+  window.addEventListener('resize', () => {
+    resizeCanvas(driverCanvas, driverHolder);
+    resizeCanvas(followerCanvas, followerHolder);
+    driver.render();
+    follower.render();
+  });
+</script>
+</body>
+</html>

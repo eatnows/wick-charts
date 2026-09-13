@@ -21,6 +21,7 @@ npm install wick-charts
   - [Styling](#styling)
   - [Inverting the value axis](#inverting-the-value-axis)
   - [Reading chart state](#reading-chart-state)
+  - [Setting the visible range](#setting-the-visible-range)
   - [Loading more history on demand](#loading-more-history-on-demand)
   - [Extending: plugins](#extending-plugins)
   - [Multi-pane indicators](#multi-pane-indicators)
@@ -269,9 +270,46 @@ without reaching into the chart's internals:
 ```ts
 chart.getPointCount();        // total candles loaded (not just visible)
 chart.getVisibleRange();      // { startIndex, endIndex, visibleCount }
+chart.getVisibleTimeRange();  // { from, to } in unix seconds, or null with no data
 chart.getValueRangeOverride(); // { min, max } once the user has dragged the price axis, else null
 chart.getHoveredPoint();      // the candle under the cursor/finger, or null
 ```
+
+### Setting the visible range
+
+The write side of `getVisibleRange`/`getVisibleTimeRange` — jump the pan/zoom window
+programmatically instead of only ever through a drag/scroll gesture:
+
+```ts
+chart.setVisibleRange({ startIndex: 50, endIndex: 100 }); // index-based, like getVisibleRange()
+chart.setVisibleTimeRange({ from: '2024-02-01T00:00:00Z', to: '2024-03-01T00:00:00Z' });
+```
+
+`setVisibleTimeRange` is the one to reach for when syncing one chart's pan/zoom onto another
+**independent** `WickChart` instance that shares a time axis — a common pattern for a price
+chart and an indicator chart panned together, or any "these views move as one" UI. Indices
+aren't safe for this: two charts may have loaded different amounts of history via
+`setDataLoader`, so the same index means a different candle in each, while the same time
+always means the same point (or the nearest one either chart actually has loaded). A time
+value in `from`/`to` accepts every shape `Candle.time` does (unix seconds/ms, ISO string,
+`{ businessDay }}`); `getVisibleTimeRange()` always returns plain unix seconds.
+
+```ts
+// Keep `follower` in lockstep with `driver` — see demo/sync.html for a
+// complete two-chart example, including what to do about there being no
+// pan/zoom change event yet (see "Status" below).
+function syncLoop() {
+  const range = driver.getVisibleTimeRange();
+  if (range) follower.setVisibleTimeRange(range);
+  requestAnimationFrame(syncLoop);
+}
+```
+
+Both setters clamp an out-of-range request instead of throwing (the same way a drag/zoom
+gesture can never overscroll past the loaded data) and clear the current hover, since a jump
+is a discontinuous change — a hover position computed for the window before it no longer
+lines up with anything until the pointer moves again. Neither touches the value axis (manual
+price-range override, invert) — only the time window moves.
 
 ### Loading more history on demand
 
@@ -680,7 +718,11 @@ horizontal strip with an independent value axis — see "Multi-pane indicators" 
 still shares the candlestick pane rather than getting its own, since it draws through the
 series itself, not a pane-targeted plugin. `invertValueAxis`/`setInvertValueAxis` mirror the
 whole stack's value axis top-to-bottom without touching the underlying data — see "Inverting
-the value axis" above. See [CHANGELOG.md](./CHANGELOG.md) for what shipped in each release.
+the value axis" above. `setVisibleRange`/`setVisibleTimeRange` let the pan/zoom window be set
+programmatically (see "Setting the visible range" above) — there's no pan/zoom *change* event
+yet, so keeping one chart synced to another (`demo/sync.html`) means polling
+`getVisibleTimeRange()` (e.g. once per animation frame) rather than reacting to a callback.
+See [CHANGELOG.md](./CHANGELOG.md) for what shipped in each release.
 
 ## License
 

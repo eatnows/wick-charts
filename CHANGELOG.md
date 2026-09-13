@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Programmatic pan/zoom** (`WickChart.setVisibleRange`,
+  `setVisibleTimeRange`/`getVisibleTimeRange`, `Viewport.setVisibleIndexRange`):
+  the write side of the existing `getVisibleRange()`, for jumping the
+  visible window without a drag/scroll gesture. `setVisibleTimeRange` is
+  time-based rather than index-based specifically so one chart's pan/zoom
+  can be synced onto another **independent** `WickChart` instance sharing
+  a time axis but not necessarily the same amount of loaded history — see
+  "Setting the visible range" in the README and `demo/sync.html` for a
+  complete two-chart example. Both setters clamp out-of-range requests
+  (never throw) and clear the current hover, the same way `setData()`
+  does for a discontinuous change; neither touches value-axis state
+  (`valueRangeOverride`/`invertValueAxis`).
+
 ## [0.6.0] — 2026-09-13
 
 ### Added
