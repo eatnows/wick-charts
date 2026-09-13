@@ -1,7 +1,7 @@
-import { formatAxisLabel, formatHoverTime, pickTickIndices } from './axis.js';
+import { AxisRenderer } from './axisRenderer.js';
+import { CrosshairRenderer } from './crosshairRenderer.js';
 import { createScale } from './hybridScale.js';
 import { computePaneLayout } from './paneLayout.js';
-import { formatPrice, niceTicks } from './priceAxis.js';
 import { pixelToValue, valueAxisPixelRange } from './valueAxis.js';
 import type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
 import type { Scale } from './hybridScale.js';
@@ -62,8 +62,8 @@ export interface RenderInput<TPoint extends SeriesPoint> {
   hoverIndex: number | null;
   /** Device-pixel y of the pointer/finger that produced `hoverIndex`, or
    * null. Drives the crosshair's horizontal line directly — see
-   * `renderCrosshairAndLegend` for why that has to be the raw cursor
-   * position rather than any property of the hovered point itself. */
+   * `CrosshairRenderer` for why that has to be the raw cursor position
+   * rather than any property of the hovered point itself. */
   hoverY: number | null;
   plugins: ChartPlugin<TPoint>[];
   /** Indicator/oscillator panes declared via `WickChart.addPane`, resolved
@@ -94,14 +94,21 @@ interface FrameGeometry<TPoint extends SeriesPoint> {
 }
 
 /**
- * The chart engine's renderer: canvas lifecycle, axes, crosshair, and
- * plugin drawing are all generic — none of it knows what kind of series is
- * on screen. The one series-specific seam is `seriesDefinition`, injected
- * at construction (see `src/series/types.ts`); everything above delegates
- * to it for value-range computation, point drawing, and legend text.
+ * The chart engine's renderer: owns the canvas lifecycle and orchestrates
+ * one frame — deciding what data is visible, computing scales, and calling
+ * out to collaborators for the actual pixel-pushing. None of it knows what
+ * kind of series is on screen: the one series-specific seam is
+ * `seriesDefinition`, injected at construction (see `src/series/types.ts`).
  * Stateless per call otherwise — all pan/zoom/hover state lives in
  * `Viewport` and `WickChart`; this class only turns a snapshot of that
  * state into pixels.
+ *
+ * Axis chrome and the hover crosshair/legend are drawn by two collaborators
+ * (`AxisRenderer`, `CrosshairRenderer`) rather than methods on this class —
+ * both take only already-resolved style options and per-call geometry, no
+ * series generic or plugin state, so splitting them out keeps this file
+ * focused on orchestration (what gets drawn, in what order, with what
+ * scale) rather than mixing in how each individual chrome element paints.
  *
  * Every visual constant below (fonts, axis sizing/coloring, crosshair
  * coloring/padding, legend color) is resolved once at construction from
@@ -113,10 +120,13 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
   private ctx: CanvasRenderingContext2D;
   private background: string;
   private style: unknown;
-  private font: Required<ChartFontOptions>;
+  /** Kept as its own field (unlike font/crosshair/legend, which only
+   * `AxisRenderer`/`CrosshairRenderer` need after construction) because
+   * `chartWidth`/`chartHeight`/`priceAxisWidth` below read it directly on
+   * every call, not just once at construction. */
   private axis: Required<ChartAxisOptions>;
-  private crosshair: Required<ChartCrosshairOptions>;
-  private legend: Required<ChartLegendOptions>;
+  private axisRenderer: AxisRenderer;
+  private crosshairRenderer: CrosshairRenderer;
   /** Unlike the style groups above, mutable after construction — see
    * `setInvertValueAxis`. A live toggle, not a one-time style choice, is
    * the whole point of this option (a "what if this series moved the
@@ -134,11 +144,14 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     this.ctx = ctx;
     this.background = options.background ?? DEFAULT_BACKGROUND;
     this.style = { ...(seriesDefinition.defaultStyle as object), ...(options.style ?? {}) };
-    this.font = { ...DEFAULT_FONT, ...options.font };
     this.axis = { ...DEFAULT_AXIS, ...options.axis };
-    this.crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
-    this.legend = { ...DEFAULT_LEGEND, ...options.legend };
     this.invertValueAxis = options.invertValueAxis ?? false;
+
+    const font = { ...DEFAULT_FONT, ...options.font };
+    const crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
+    const legend = { ...DEFAULT_LEGEND, ...options.legend };
+    this.axisRenderer = new AxisRenderer(ctx, this.axis, font);
+    this.crosshairRenderer = new CrosshairRenderer(ctx, crosshair, legend, font, this.axis.priceWidth);
   }
 
   setInvertValueAxis(inverted: boolean): void {
@@ -158,14 +171,6 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
 
   get priceAxisWidth(): number {
     return this.axis.priceWidth;
-  }
-
-  private axisFont(): string {
-    return `${this.font.axisSize}px ${this.font.family}`;
-  }
-
-  private legendFont(): string {
-    return `${this.font.legendSize}px ${this.font.family}`;
   }
 
   render(input: RenderInput<TPoint>): void {
@@ -272,24 +277,24 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
         ctx.restore();
       }
 
-      const priceStep = this.currentPriceStep(valueMin, valueMax);
-      this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, mainRect.top);
+      const priceStep = this.axisRenderer.priceStep(valueMin, valueMax);
+      this.axisRenderer.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, mainRect.top);
       for (const { rect, min, max, scale } of paneScales) {
-        this.renderPaneSeparator(rect.top, chartWidth);
-        const step = this.currentPriceStep(min, max);
-        this.renderPriceAxis(min, max, step, scale, chartWidth, rect.height, rect.top);
+        this.axisRenderer.renderPaneSeparator(rect.top, chartWidth);
+        const step = this.axisRenderer.priceStep(min, max);
+        this.axisRenderer.renderPriceAxis(min, max, step, scale, chartWidth, rect.height, rect.top);
       }
-      this.renderTimeAxis(times, startIdx, visible.length, stackHeight, chartWidth, xForIndex);
+      this.axisRenderer.renderTimeAxis(times, startIdx, visible.length, stackHeight, chartWidth, xForIndex);
 
       if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
         // The dashed vertical line spans the whole stack (every pane); the
         // horizontal line, price-label chip, and OHLC legend stay scoped
         // to the main pane only — an indicator pane's own hover readout,
         // if it wants one, is the job of whatever plugin draws into it.
-        this.renderCrosshairAndLegend(
-          sorted[hoverIndex]!,
-          xForIndex(hoverIndex),
-          times[hoverIndex]!,
+        const legendParts = seriesDefinition.formatLegend?.(sorted[hoverIndex]!, style) ?? [];
+        this.crosshairRenderer.render({
+          x: xForIndex(hoverIndex),
+          timeSeconds: times[hoverIndex]!,
           hoverY,
           valueMin,
           valueMax,
@@ -297,7 +302,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           chartWidth,
           chartHeight,
           stackHeight,
-        );
+          invertValueAxis: this.invertValueAxis,
+          legendParts,
+          canvasWidth: canvas.width,
+        });
       }
 
       if (plugins.length > 0) {
@@ -391,235 +399,5 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       visibleEndIndex,
       allPoints,
     };
-  }
-
-  /** The decimal precision `formatPrice` should use for the current price
-   * range — shared by the axis ticks and the crosshair's price label so
-   * both display the same value with the same rounding. */
-  private currentPriceStep(priceMin: number, priceMax: number): number {
-    const ticks = niceTicks(priceMin, priceMax, this.axis.priceTickCount);
-    return ticks.length > 1 ? ticks[1]! - ticks[0]! : 0;
-  }
-
-  /**
-   * Draws one pane's right-side value axis: boundary line, horizontal grid
-   * lines, and tick labels. Used for both the main price pane and every
-   * indicator pane — `topOffset` shifts everything down by that pane's own
-   * position in the stack (0 for the main pane, which sits at the top), so
-   * `yScale` only ever has to know about its own pane-local [0, chartHeight]
-   * range and never about where that pane lives in the full canvas.
-   */
-  private renderPriceAxis(
-    priceMin: number,
-    priceMax: number,
-    step: number,
-    yScale: Scale,
-    chartWidth: number,
-    chartHeight: number,
-    topOffset: number,
-  ): void {
-    const { ctx, axis } = this;
-    const ticks = niceTicks(priceMin, priceMax, axis.priceTickCount);
-
-    ctx.strokeStyle = axis.lineColor;
-    ctx.beginPath();
-    ctx.moveTo(chartWidth + 0.5, topOffset);
-    ctx.lineTo(chartWidth + 0.5, topOffset + chartHeight);
-    ctx.stroke();
-
-    ctx.font = this.axisFont();
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-
-    for (const value of ticks) {
-      const localY = yScale.map(value);
-      if (localY < 0 || localY > chartHeight) continue;
-      const y = topOffset + localY;
-
-      ctx.strokeStyle = axis.gridLineColor;
-      ctx.beginPath();
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(chartWidth, y + 0.5);
-      ctx.stroke();
-
-      ctx.fillStyle = axis.textColor;
-      ctx.fillText(formatPrice(value, step), chartWidth + 6, y);
-    }
-  }
-
-  /** The horizontal rule separating an indicator pane from whatever sits
-   * above it (the main pane, or the previous indicator pane) — the same
-   * `axis.lineColor` boundary style `renderTimeAxis` already draws between
-   * the plotting area and the time-axis strip. */
-  private renderPaneSeparator(top: number, chartWidth: number): void {
-    const { ctx, axis } = this;
-    ctx.strokeStyle = axis.lineColor;
-    ctx.beginPath();
-    ctx.moveTo(0, top + 0.5);
-    ctx.lineTo(chartWidth, top + 0.5);
-    ctx.stroke();
-  }
-
-  private renderTimeAxis(
-    times: number[],
-    startIdx: number,
-    visibleCount: number,
-    chartHeight: number,
-    chartWidth: number,
-    xForIndex: (globalIndex: number) => number,
-  ): void {
-    const { ctx, axis } = this;
-    const visibleTimes = times.slice(startIdx, startIdx + visibleCount);
-    const spanSeconds = visibleTimes[visibleTimes.length - 1]! - visibleTimes[0]!;
-
-    ctx.strokeStyle = axis.lineColor;
-    ctx.beginPath();
-    ctx.moveTo(0, chartHeight + 0.5);
-    ctx.lineTo(chartWidth, chartHeight + 0.5);
-    ctx.stroke();
-
-    ctx.fillStyle = axis.textColor;
-    ctx.font = this.axisFont();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-
-    for (const localIndex of pickTickIndices(visibleCount, axis.timeMaxTicks)) {
-      const x = xForIndex(startIdx + localIndex);
-      const label = formatAxisLabel(visibleTimes[localIndex]!, spanSeconds);
-      ctx.fillText(label, x, chartHeight + 6);
-    }
-  }
-
-  private renderCrosshairAndLegend(
-    point: TPoint,
-    x: number,
-    timeSeconds: number,
-    hoverY: number | null,
-    valueMin: number,
-    valueMax: number,
-    priceStep: number,
-    chartWidth: number,
-    chartHeight: number,
-    stackHeight: number,
-  ): void {
-    const { ctx, canvas, seriesDefinition, style, crosshair } = this;
-
-    ctx.save();
-    ctx.strokeStyle = crosshair.lineColor;
-    ctx.setLineDash([4, 4]);
-
-    // Spans the whole pane stack (not just the main pane's own
-    // chartHeight) so hovering a candle lines up with the same column
-    // across every indicator pane below it — see the call site's comment
-    // in `render()` for why the horizontal line/legend don't follow suit.
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, stackHeight);
-    ctx.stroke();
-
-    // The horizontal line follows the actual cursor/finger position, not
-    // any property of the hovered point — pinning it to (say) the candle's
-    // close would leave it motionless while the pointer moves anywhere
-    // within that same candle's column, which reads as broken/stuck rather
-    // than as a crosshair. Only drawn while the pointer is actually inside
-    // the chart's vertical extent, same as the price-axis tick-skip logic
-    // in renderPriceAxis.
-    const priceLineVisible = hoverY !== null && hoverY >= 0 && hoverY <= chartHeight;
-    if (priceLineVisible) {
-      ctx.beginPath();
-      ctx.moveTo(0, hoverY);
-      ctx.lineTo(chartWidth, hoverY);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    if (priceLineVisible) {
-      // Exact inverse of the value->y mapping createScale set up for this
-      // frame — same helper (and same invertValueAxis flag) as
-      // PluginRenderApi.valueForY, see src/valueAxis.ts.
-      const value = pixelToValue(hoverY, valueMin, valueMax, chartHeight, this.invertValueAxis);
-      this.renderPriceLabelChip(formatPrice(value, priceStep), hoverY, chartWidth);
-    }
-    this.renderTimeLabelChip(formatHoverTime(timeSeconds), x, chartHeight, canvas.width);
-
-    const parts = seriesDefinition.formatLegend?.(point, style) ?? [];
-    if (parts.length === 0) return;
-    this.renderHoverTooltip(parts, x, hoverY, chartWidth, chartHeight);
-  }
-
-  /** The OHLC(+volume) tooltip — floats near the hovered pixel like a
-   * speech bubble, one line per part, rather than a fixed banner glued to
-   * a corner of the canvas. Offset up-and-right of the cursor/finger by
-   * `legend.cursorGap` and clamped to both chart edges so it never runs
-   * off-screen, including when there's no `hoverY` to anchor to (a series
-   * with no primary value still gets a legend, just pinned near the top
-   * at the hovered column). */
-  private renderHoverTooltip(
-    lines: string[],
-    x: number,
-    hoverY: number | null,
-    chartWidth: number,
-    chartHeight: number,
-  ): void {
-    const { ctx, font, legend } = this;
-    ctx.font = this.legendFont();
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    const lineHeight = font.legendSize + 4;
-    const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
-    const boxWidth = textWidth + legend.paddingX * 2;
-    const boxHeight = lines.length * lineHeight + legend.paddingY * 2;
-
-    const anchorY = hoverY ?? 0;
-    const left = Math.min(Math.max(x + legend.cursorGap, 0), Math.max(0, chartWidth - boxWidth));
-    const top = Math.min(
-      Math.max(anchorY - boxHeight - legend.cursorGap, 0),
-      Math.max(0, chartHeight - boxHeight),
-    );
-
-    ctx.fillStyle = legend.background;
-    ctx.fillRect(left, top, boxWidth, boxHeight);
-
-    ctx.fillStyle = legend.textColor;
-    lines.forEach((line, i) => {
-      ctx.fillText(line, left + legend.paddingX, top + legend.paddingY + i * lineHeight);
-    });
-  }
-
-  /** The highlighted price-axis label that follows the crosshair's
-   * horizontal line — drawn over `renderPriceAxis`'s own tick labels so the
-   * hovered value reads clearly even where it lands between two ticks. */
-  private renderPriceLabelChip(text: string, y: number, chartWidth: number): void {
-    const { ctx, font, crosshair } = this;
-    ctx.font = this.axisFont();
-    const chipHeight = font.axisSize + crosshair.labelPaddingY * 2;
-
-    ctx.fillStyle = crosshair.labelBackground;
-    ctx.fillRect(chartWidth, y - chipHeight / 2, this.priceAxisWidth, chipHeight);
-
-    ctx.fillStyle = crosshair.labelTextColor;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, chartWidth + crosshair.labelPaddingX, y);
-  }
-
-  /** The highlighted time-axis label under the crosshair's vertical line.
-   * Clamped so its background chip stays fully on-screen even when the
-   * hovered point sits at the very first or last visible index. */
-  private renderTimeLabelChip(text: string, x: number, chartHeight: number, canvasWidth: number): void {
-    const { ctx, font, crosshair } = this;
-    ctx.font = this.axisFont();
-    const chipWidth = ctx.measureText(text).width + crosshair.labelPaddingX * 2;
-    const chipHeight = font.axisSize + crosshair.labelPaddingY * 2;
-    const chipLeft = Math.min(Math.max(x - chipWidth / 2, 0), canvasWidth - chipWidth);
-
-    ctx.fillStyle = crosshair.labelBackground;
-    ctx.fillRect(chipLeft, chartHeight, chipWidth, chipHeight);
-
-    ctx.fillStyle = crosshair.labelTextColor;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(text, chipLeft + crosshair.labelPaddingX, chartHeight + crosshair.labelPaddingY);
   }
 }
