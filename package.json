@@ -1,16 +1,16 @@
 {
-  "name": "cinder-charts",
+  "name": "wick-charts",
   "version": "0.3.0",
   "description": "An open-source financial charting library — WASM (Rust) for compute, Canvas2D for rendering.",
   "license": "MIT",
   "author": "eatnows",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/eatnows/cinder-charts.git"
+    "url": "git+https://github.com/eatnows/wick-charts.git"
   },
-  "homepage": "https://github.com/eatnows/cinder-charts#readme",
+  "homepage": "https://github.com/eatnows/wick-charts#readme",
   "bugs": {
-    "url": "https://github.com/eatnows/cinder-charts/issues"
+    "url": "https://github.com/eatnows/wick-charts/issues"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -24,11 +24,11 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "pnpm clean && tsc -p tsconfig.json",
-    "build:wasm": "wasm-pack build crates/cinderchart-core --target web --out-dir ../../wasm-pkg --out-name cinderchart_core",
+    "build:wasm": "wasm-pack build crates/wickchart-core --target web --out-dir ../../wasm-pkg --out-name wickchart_core",
     "demo": "pnpm build:wasm && pnpm build && python3 -m http.server 4173",
     "test": "vitest run",
     "test:rust": "cargo test",
-    "check:rust": "cargo check --target wasm32-unknown-unknown -p cinderchart-core",
+    "check:rust": "cargo check --target wasm32-unknown-unknown -p wickchart-core",
     "prepublishOnly": "pnpm build:wasm && pnpm build && pnpm test"
   },
   "devDependencies": {

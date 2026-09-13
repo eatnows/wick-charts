@@ -1,17 +1,17 @@
-import type { BusinessDay, CinderTime, UnixMillis } from './types.js';
+import type { BusinessDay, WickTime, UnixMillis } from './types.js';
 
-/** One recognized `CinderTime` shape: how to detect it, how to normalize it. */
+/** One recognized `WickTime` shape: how to detect it, how to normalize it. */
 interface TimeStrategy {
   name: string;
-  test(time: CinderTime): boolean;
-  toUnixSeconds(time: CinderTime): number;
+  test(time: WickTime): boolean;
+  toUnixSeconds(time: WickTime): number;
 }
 
-function isUnixMillis(time: CinderTime): time is UnixMillis {
+function isUnixMillis(time: WickTime): time is UnixMillis {
   return typeof time === 'object' && time !== null && 'unixMs' in time;
 }
 
-function isBusinessDay(time: CinderTime): time is { businessDay: BusinessDay } {
+function isBusinessDay(time: WickTime): time is { businessDay: BusinessDay } {
   return typeof time === 'object' && time !== null && 'businessDay' in time;
 }
 
@@ -47,7 +47,7 @@ const strategies: TimeStrategy[] = [
     toUnixSeconds: (time) => {
       const parsedMs = Date.parse(time as string);
       if (Number.isNaN(parsedMs)) {
-        throw new Error(`cinder-charts: could not parse time string "${String(time)}" as ISO 8601`);
+        throw new Error(`wick-charts: could not parse time string "${String(time)}" as ISO 8601`);
       }
       return parsedMs / 1000;
     },
@@ -55,17 +55,17 @@ const strategies: TimeStrategy[] = [
 ];
 
 /**
- * Normalizes any supported `CinderTime` shape to unix seconds — the single
+ * Normalizes any supported `WickTime` shape to unix seconds — the single
  * unit every downstream consumer (sorting, scaling, rendering) works in.
  */
-export function toUnixSeconds(time: CinderTime): number {
+export function toUnixSeconds(time: WickTime): number {
   const strategy = strategies.find((s) => s.test(time));
   if (!strategy) {
-    throw new Error(`cinder-charts: unrecognized time value ${JSON.stringify(time)}`);
+    throw new Error(`wick-charts: unrecognized time value ${JSON.stringify(time)}`);
   }
   const seconds = strategy.toUnixSeconds(time);
   if (!Number.isFinite(seconds)) {
-    throw new Error(`cinder-charts: "${strategy.name}" strategy produced a non-finite time for ${JSON.stringify(time)}`);
+    throw new Error(`wick-charts: "${strategy.name}" strategy produced a non-finite time for ${JSON.stringify(time)}`);
   }
   return seconds;
 }

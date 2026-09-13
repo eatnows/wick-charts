@@ -26,7 +26,7 @@ export interface UnixMillis {
  * strategy list — this type and the call sites that consume `SeriesPoint`
  * never need to change.
  */
-export type CinderTime = number | string | UnixMillis | { businessDay: BusinessDay };
+export type WickTime = number | string | UnixMillis | { businessDay: BusinessDay };
 
 /**
  * The minimum shape every plotted point must have, regardless of chart
@@ -38,7 +38,7 @@ export type CinderTime = number | string | UnixMillis | { businessDay: BusinessD
  * behavior (drawing, value-range, legend text) actually lives.
  */
 export interface SeriesPoint {
-  time: CinderTime;
+  time: WickTime;
 }
 
 /**
@@ -126,13 +126,13 @@ export interface ChartLegendOptions {
   cursorGap?: number;
 }
 
-export interface CinderChartOptions {
+export interface WickChartOptions {
   /**
    * Which registered series type to render this chart as (see
    * `registerSeries` in `src/series/registry.ts`). Defaults to
    * `'candlestick'`, the only type built into the library today — adding a
    * new one is a matter of implementing `SeriesDefinition` and registering
-   * it, without changing `CinderChart` or `ChartRenderer` at all.
+   * it, without changing `WickChart` or `ChartRenderer` at all.
    */
   type?: string;
   /** Background color of the canvas. Defaults to transparent. Chart-wide

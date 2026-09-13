@@ -16,7 +16,7 @@ public API — there is no prior published version to diff against.
   zoom, price-axis drag-to-scale, hover crosshair, and on-demand history
   loading (`setDataLoader`) that fetches more data as the user pans toward
   either edge of what's currently loaded.
-- **WASM-backed coordinate scaling** (`crates/cinderchart-core`): the one
+- **WASM-backed coordinate scaling** (`crates/wickchart-core`): the one
   numeric hot path — domain-to-pixel scaling over large series — compiled to
   WebAssembly for large datasets, with a transparent pure-JS fallback.
 - **Series registry** (`registerSeries`/`getSeries`): the chart type itself
@@ -44,7 +44,7 @@ public API — there is no prior published version to diff against.
   a plugin needs to convert a shape it stores in data space (so it survives
   pan/zoom) back to pixels at hit-test time.
 - **Plugin management primitives**: optional `id`/`visible` fields on
-  `ChartPlugin`, plus `CinderChart.getPlugins()` and
+  `ChartPlugin`, plus `WickChart.getPlugins()` and
   `setPluginVisible(id, visible)` — an app attaching several
   indicators/drawing tools can enumerate and toggle them without keeping
   its own parallel bookkeeping of every `addPlugin` call. The UI built on

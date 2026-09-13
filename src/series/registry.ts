@@ -13,7 +13,7 @@ import type { SeriesDefinition } from './types.js';
  */
 const registry = new Map<string, SeriesDefinition<any, any>>();
 
-/** Registers a series type, making it available to `new CinderChart(canvas,
+/** Registers a series type, making it available to `new WickChart(canvas,
  * { type: definition.type })`. Call this once per definition — typically as
  * a module-level side effect in the file that defines it (see
  * `src/series/candlestick.ts`) so importing the module is enough to make
@@ -27,11 +27,11 @@ export function registerSeries<TPoint extends SeriesPoint, TStyle>(
 /** Resolves a `type` string to its registered definition. Throws rather
  * than returning `undefined` — an unknown type is a caller mistake (typo,
  * or forgetting to import the module that registers it), not a state
- * `CinderChart` should silently tolerate. */
+ * `WickChart` should silently tolerate. */
 export function getSeries<TPoint extends SeriesPoint, TStyle>(type: string): SeriesDefinition<TPoint, TStyle> {
   const definition = registry.get(type);
   if (!definition) {
-    throw new Error(`cinder-charts: unknown series type "${type}" — is it registered (registerSeries) and imported?`);
+    throw new Error(`wick-charts: unknown series type "${type}" — is it registered (registerSeries) and imported?`);
   }
   return definition as SeriesDefinition<TPoint, TStyle>;
 }

@@ -1,4 +1,4 @@
-/** Shape of the compiled cinderchart-core WASM module as exposed by its
+/** Shape of the compiled wickchart-core WASM module as exposed by its
  * wasm-bindgen bindings: a `default` init function plus the same `Scale`
  * class the Rust crate defines. */
 export interface WasmModule {

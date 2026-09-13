@@ -1,7 +1,7 @@
 /**
  * JS placeholder for domain→pixel scaling.
  *
- * This mirrors `Scale` in crates/cinderchart-core/src/lib.rs exactly. It's
+ * This mirrors `Scale` in crates/wickchart-core/src/lib.rs exactly. It's
  * the seam where the WASM build gets wired in: once the crate is compiled
  * with wasm-pack and published as an internal dependency, `LinearScale`
  * gets replaced by a thin wrapper around the WASM `Scale` for series above

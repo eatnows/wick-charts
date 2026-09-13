@@ -9,7 +9,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Pure pan/zoom/value-scale state — no DOM, no canvas. `CinderChart` owns
+ * Pure pan/zoom/value-scale state — no DOM, no canvas. `WickChart` owns
  * translating pixel deltas (drag distance, wheel delta) into calls here;
  * this class only owns the resulting numbers, which keeps it unit-testable
  * without a canvas. Generic across series types: "value" here is whatever
@@ -23,7 +23,7 @@ export class Viewport {
   /** 1 = auto-fit value range. >1 widens it (the series looks
    * shorter/compressed). <1 narrows it (the series looks taller), clamped
    * so real data never clips off-screen. Sign of drag->factor mapping
-   * lives in CinderChart, not here. */
+   * lives in WickChart, not here. */
   valueScaleFactor = 1;
 
   /** Manually-set value range from a vertical drag or value-axis scale.
@@ -72,7 +72,7 @@ export class Viewport {
   }
 
   /** Switches the value axis to manual mode, pinned at `range`. Call once,
-   * lazily, the first time the user drags vertically — see `CinderChart`. */
+   * lazily, the first time the user drags vertically — see `WickChart`. */
   setValueRangeOverride(range: ValueRange): void {
     this.valueRangeOverride = range;
   }

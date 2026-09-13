@@ -1,4 +1,4 @@
-//! cinderchart-core — the WASM compute half of cinderchart.
+//! wickchart-core — the WASM compute half of wick-charts.
 //!
 //! Rendering (Canvas2D) stays in TypeScript. This crate owns the numeric
 //! hot paths that actually benefit from running outside the JS interpreter:

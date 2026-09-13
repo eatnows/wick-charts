@@ -28,7 +28,7 @@ export interface SeriesDrawContext<TPoint extends SeriesPoint> {
 }
 
 /**
- * The single seam a new chart type has to implement. `CinderChart` and
+ * The single seam a new chart type has to implement. `WickChart` and
  * `ChartRenderer` are written only against this interface — pan/zoom,
  * touch/mouse handling, on-demand data loading, and axis rendering never
  * need to know which concrete series is active. Adding a new chart type
@@ -38,9 +38,9 @@ export interface SeriesDrawContext<TPoint extends SeriesPoint> {
  * `src/series/registry.ts` for how `type` strings resolve to a definition.
  */
 export interface SeriesDefinition<TPoint extends SeriesPoint, TStyle> {
-  /** Unique key — what `CinderChartOptions.type` matches against. */
+  /** Unique key — what `WickChartOptions.type` matches against. */
   readonly type: string;
-  /** Style used when the caller doesn't override it via `CinderChartOptions.style`. */
+  /** Style used when the caller doesn't override it via `WickChartOptions.style`. */
   readonly defaultStyle: TStyle;
   /** Computes the y-domain to auto-fit for the currently visible points,
    * before the user has manually panned/scaled the value axis (see

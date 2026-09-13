@@ -9,7 +9,7 @@ import type {
   ChartCrosshairOptions,
   ChartFontOptions,
   ChartLegendOptions,
-  CinderChartOptions,
+  WickChartOptions,
   SeriesPoint,
 } from './types.js';
 import type { Viewport } from './viewport.js';
@@ -71,12 +71,12 @@ export interface RenderInput<TPoint extends SeriesPoint> {
  * at construction (see `src/series/types.ts`); everything above delegates
  * to it for value-range computation, point drawing, and legend text.
  * Stateless per call otherwise — all pan/zoom/hover state lives in
- * `Viewport` and `CinderChart`; this class only turns a snapshot of that
+ * `Viewport` and `WickChart`; this class only turns a snapshot of that
  * state into pixels.
  *
  * Every visual constant below (fonts, axis sizing/coloring, crosshair
  * coloring/padding, legend color) is resolved once at construction from
- * `CinderChartOptions.font`/`axis`/`crosshair`/`legend`, each merged field
+ * `WickChartOptions.font`/`axis`/`crosshair`/`legend`, each merged field
  * by field over its own defaults — nothing here is a hardcoded module
  * constant a caller can't reach.
  */
@@ -92,10 +92,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
   constructor(
     private canvas: HTMLCanvasElement,
     private seriesDefinition: SeriesDefinition<TPoint, unknown>,
-    options: CinderChartOptions = {},
+    options: WickChartOptions = {},
   ) {
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('cinder-charts: canvas 2d context unavailable');
+    if (!ctx) throw new Error('wick-charts: canvas 2d context unavailable');
     this.ctx = ctx;
     this.background = options.background ?? DEFAULT_BACKGROUND;
     this.style = { ...(seriesDefinition.defaultStyle as object), ...(options.style ?? {}) };
@@ -106,7 +106,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
   }
 
   /** Pixel width of the point-plotting area — excludes the price-axis
-   * strip on the right. Exposed so `CinderChart` can convert cursor pixel
+   * strip on the right. Exposed so `WickChart` can convert cursor pixel
    * positions to point indices / values for hit-testing and dragging. */
   get chartWidth(): number {
     return Math.max(0, this.canvas.width - this.axis.priceWidth);
@@ -212,7 +212,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           yForValue: (value) => {
             if (frameEnded) {
               throw new Error(
-                'cinder-charts: PluginRenderApi.yForValue called after its frame ended — ' +
+                'wick-charts: PluginRenderApi.yForValue called after its frame ended — ' +
                   'only call it synchronously inside ChartPlugin.draw()',
               );
             }
@@ -239,7 +239,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           try {
             plugin.draw(api);
           } catch (error) {
-            console.error('cinder-charts: a plugin threw during draw()', error);
+            console.error('wick-charts: a plugin threw during draw()', error);
           } finally {
             ctx.restore();
           }

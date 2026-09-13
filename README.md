@@ -1,7 +1,7 @@
-# cinder-charts
+# wick-charts
 
-[![npm version](https://img.shields.io/npm/v/cinder-charts.svg)](https://www.npmjs.com/package/cinder-charts)
-[![license](https://img.shields.io/npm/l/cinder-charts.svg)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/wick-charts.svg)](https://www.npmjs.com/package/wick-charts)
+[![license](https://img.shields.io/npm/l/wick-charts.svg)](./LICENSE)
 
 An open-source financial charting library. WASM (Rust) for compute, Canvas2D for rendering.
 
@@ -28,7 +28,7 @@ An open-source financial charting library. WASM (Rust) for compute, Canvas2D for
 
 A serious trading UI needs more than a candlestick renderer on a page — drawing tools,
 multi-pane indicator stacks, replay, and large-series performance all matter once real
-usage starts. cinder-charts aims to cover that ground natively from the start, while keeping
+usage starts. wick-charts aims to cover that ground natively from the start, while keeping
 rendering on the simplest thing that can possibly work (Canvas2D — no WebGL until profiling
 says it's actually needed).
 
@@ -54,8 +54,8 @@ says it's actually needed).
 ### Install
 
 ```bash
-npm install cinder-charts
-# or: pnpm add cinder-charts / yarn add cinder-charts
+npm install wick-charts
+# or: pnpm add wick-charts / yarn add wick-charts
 ```
 
 `dist/` and `wasm-pkg/` ship together inside the package and must stay siblings — the compiled
@@ -73,7 +73,7 @@ degrades performance silently rather than crashing.
 ```
 
 ```ts
-import { createCandlestickChart } from 'cinder-charts';
+import { createCandlestickChart } from 'wick-charts';
 
 const canvas = document.getElementById('chart') as HTMLCanvasElement;
 
@@ -185,7 +185,7 @@ reference for what exists. The `legend` options style a small tooltip — one li
 `formatLegend()` part — that follows the hovered pixel like a speech bubble, offset up and to
 the right of it, and clamped so it never runs off the chart's edges. `createCandlestickChart`
 type-checks `style` against
-`CandlestickStyle`; the more general `new CinderChart(canvas, { type: 'candlestick', style })`
+`CandlestickStyle`; the more general `new WickChart(canvas, { type: 'candlestick', style })`
 also works but doesn't — see "Series types" below for why, if you're curious.
 
 ### Reading chart state
@@ -245,7 +245,7 @@ for why that lives in the demo and not in the library itself.
 
 A plugin that only draws (a marker, an indicator overlay) never needs anything beyond `draw()`.
 One that's placed or edited by the user — a trend line, a horizontal price alert someone drags
-into position — needs to see raw pointer gestures too, which `CinderChart` would otherwise
+into position — needs to see raw pointer gestures too, which `WickChart` would otherwise
 consume entirely for its own panning. `onPointerDown`/`onPointerMove`/`onPointerUp` are for
 exactly this:
 
@@ -290,12 +290,12 @@ Placing a line is only half of a drawing tool — re-selecting one that's alread
 (to drag it, delete it, or just highlight it) means answering "is this click on/near the shape
 I already drew," which a `<canvas>` can't tell you on its own: it never reports which pixels
 belong to what you painted, only raw pointer coordinates. `distanceToSegment`/`hitTestSegment`/
-`hitTestPoint` (from `cinder-charts`) are that missing piece — the point-to-segment geometry
+`hitTestPoint` (from `wick-charts`) are that missing piece — the point-to-segment geometry
 every line-shaped drawing tool needs, written once instead of re-derived (and subtly
 mis-derived at the endpoints) per plugin:
 
 ```ts
-import { hitTestSegment } from 'cinder-charts';
+import { hitTestSegment } from 'wick-charts';
 
 chart.addPlugin({
   draw({ ctx, xForIndex, yForValue }) {
@@ -358,12 +358,12 @@ wouldn't clean up on its own.
 
 ## Architecture
 
-- **`crates/cinderchart-core`** (Rust → WASM): owns the one numeric hot path that's actually
+- **`crates/wickchart-core`** (Rust → WASM): owns the one numeric hot path that's actually
   the charting engine's own — domain→pixel scaling over large series, where avoiding JS
   interpreter overhead shows up in a profile. Deliberately not indicator math; see
   "Indicators" below.
 - **`src/`** (TypeScript): the public API and the Canvas2D renderer.
-  - `CinderChart` owns the canvas, event wiring (pan/zoom/price-axis drag/hover), on-demand
+  - `WickChart` owns the canvas, event wiring (pan/zoom/price-axis drag/hover), on-demand
     data loading, and the render loop. None of it knows what's actually being plotted — see
     "Series types" below.
   - `Viewport` is the pure pan/zoom/value-range state — no DOM, fully unit tested. "Value"
@@ -378,13 +378,13 @@ wouldn't clean up on its own.
     compiled WASM `Scale` instead, batching each frame's coordinate mapping into one
     `mapMany` call per array rather than one JS↔WASM crossing per point.
 
-The WASM module loads in the background the moment a `CinderChart` is constructed
+The WASM module loads in the background the moment a `WickChart` is constructed
 (`src/wasm.ts` + `src/wasmImporter.ts`) and is never awaited on the render path — every
 frame before it resolves just uses the JS scale, so there's no load-time flash or blocking.
 
 ### Engine-level styling vs. series style
 
-`ChartRenderer` resolves `CinderChartOptions.font`/`axis`/`crosshair`/`legend` once, in its
+`ChartRenderer` resolves `WickChartOptions.font`/`axis`/`crosshair`/`legend` once, in its
 constructor (each merged field-by-field over its own `DEFAULT_*` object in `renderer.ts`),
 into private fields it reads from everywhere it used to reference a module-level constant —
 axis strip sizing (`chartWidth`/`chartHeight` derive from `axis.priceWidth`/`timeHeight`
@@ -399,13 +399,13 @@ for *this* series (a line series wouldn't have a body width or volume bars to co
 ### Series types
 
 Candlesticks are the only chart type today, but nothing above `src/series/` knows that.
-`CinderChart` and `ChartRenderer` are generic over a point shape (`SeriesPoint` — just a
+`WickChart` and `ChartRenderer` are generic over a point shape (`SeriesPoint` — just a
 `time`) and delegate every type-specific decision — how to compute the value-axis range,
 how to draw the visible points, what a hover legend says — to a
 `SeriesDefinition` (see `src/series/types.ts`) resolved at construction time from
 `options.type` via a small registry (`src/series/registry.ts`). `src/series/candlestick.ts`
 is the reference implementation: it registers itself as `'candlestick'` on import, which is
-why importing `cinder-charts` at all is enough to make that type available without the caller
+why importing `wick-charts` at all is enough to make that type available without the caller
 registering anything.
 
 Adding a second chart type (line, area, bar, ...) means writing one new file that
@@ -416,19 +416,19 @@ event handling, data loading, and WASM scale dispatch are all untouched, and exi
 series's `defaultStyle` declares (candlestick's is `{ upColor, downColor }`), merged over
 that default rather than hardcoded into the chart itself.
 
-`options.type` is a plain string the registry resolves at runtime, so `new CinderChart(canvas,
+`options.type` is a plain string the registry resolves at runtime, so `new WickChart(canvas,
 { type: 'candlestick', style: {...} })` type-checks even if `style` has nothing to do with
 `CandlestickStyle` — nothing ties a runtime string to a specific `TPoint`/`TStyle` pair at the
 type level. `createCandlestickChart()` (in `src/index.ts`) is the fix for the one built-in
 type: a thin wrapper that pins both generics so its `style` is fully checked. A new series
 should export an equivalent `create<Name>Chart` next to it rather than widening
-`CinderChartOptions` itself, so each series's style shape stays independent of every other's.
+`WickChartOptions` itself, so each series's style shape stays independent of every other's.
 
 ### Plugins (markers, annotations, drawing tools)
 
 A second, narrower extension point covers anything drawn *on top of* a chart without being
 a chart type of its own — price markers, alert lines, annotations, indicator overlays.
-`CinderChart.addPlugin()` registers an object implementing `ChartPlugin<TPoint>`
+`WickChart.addPlugin()` registers an object implementing `ChartPlugin<TPoint>`
 (`src/plugins/types.ts`); `ChartRenderer` calls its `draw()` once per frame, after the series
 and axes, with a `PluginRenderApi<TPoint>` built fresh from that frame's own pan/zoom state
 (`xForIndex`, `yForValue`, chart geometry, plus `allPoints` — the full loaded series, not just
@@ -454,7 +454,7 @@ two things `draw()` alone can't give it, both added specifically to make that bu
   pointer position happens on user gestures, not once per point per frame, so it was never a
   case the batched/WASM-accelerated path was for.
 - **Pointer gesture claiming** — `ChartPlugin.onPointerDown`/`onPointerMove`/`onPointerUp`.
-  `CinderChart` offers every pointer-down inside the chart area (never the price-axis strip)
+  `WickChart` offers every pointer-down inside the chart area (never the price-axis strip)
   to its plugins in reverse-registration order *before* deciding its own pan/price-scale
   mode; the first plugin whose `onPointerDown` returns `true` becomes the gesture's sole
   owner (`activeGesturePlugin`) until pointer-up, and the chart's own panning/hover is
@@ -467,7 +467,7 @@ two things `draw()` alone can't give it, both added specifically to make that bu
 
 ### Indicators (moving averages, Bollinger Bands, ...): deliberately not included
 
-cinder-charts ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
+wick-charts ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
 and nothing built on top of it. This was a real decision, not an oversight — charting
 libraries generally land somewhere on a spectrum: some ship no indicators at all, only a
 generic primitive/plugin API plus docs on building your own, leaving actual indicators to a
@@ -477,7 +477,7 @@ opt-in modules on top of a public extension class, so a consumer who never touch
 never pays for them; and some have no indicator concept at all, treating an indicator as
 nothing more than an ordinary dataset the application computes and plots itself.
 
-cinder-charts follows the first pattern: indicator math has too many real conventions (SMA vs.
+wick-charts follows the first pattern: indicator math has too many real conventions (SMA vs.
 EMA, population vs. sample standard deviation, Wilder's smoothing for RSI, ...) for a charting
 engine to pick one and call it correct for everyone, and every one bundled is one more thing
 this library has to maintain forever. `demo/index.html` has a from-scratch moving-average
@@ -490,8 +490,8 @@ Building from source — for contributors, or if you'd rather depend on a local 
 the published package:
 
 ```bash
-git clone https://github.com/eatnows/cinder-charts.git
-cd cinder-charts
+git clone https://github.com/eatnows/wick-charts.git
+cd wick-charts
 pnpm install
 
 # TypeScript

@@ -9,9 +9,9 @@ import { importRealWasm } from './wasmImporter.js';
 import type { ChartPlugin, ChartPointerEvent } from './plugins/types.js';
 import type { CandlestickStyle } from './series/candlestick.js';
 import type { SeriesDefinition } from './series/types.js';
-import type { Candle, CinderChartOptions, SeriesPoint, ValueRange } from './types.js';
+import type { Candle, WickChartOptions, SeriesPoint, ValueRange } from './types.js';
 
-export type { BusinessDay, Candle, CinderChartOptions, CinderTime, SeriesPoint, UnixMillis, ValueRange } from './types.js';
+export type { BusinessDay, Candle, WickChartOptions, WickTime, SeriesPoint, UnixMillis, ValueRange } from './types.js';
 export type { DataLoader, DataRequest } from './dataSource.js';
 export type { ChartPlugin, ChartPointerEvent, PluginRenderApi } from './plugins/types.js';
 export { distanceToSegment, hitTestPoint, hitTestSegment } from './hitTest.js';
@@ -64,7 +64,7 @@ const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
  * point's fields directly. Construct once per canvas; call `destroy()`
  * when done with it (unmount) to remove the window-level mouseup listener.
  */
-export class CinderChart<TPoint extends SeriesPoint = Candle> {
+export class WickChart<TPoint extends SeriesPoint = Candle> {
   private renderer: ChartRenderer<TPoint>;
   private seriesDefinition: SeriesDefinition<TPoint, unknown>;
   private sorted: TPoint[] = [];
@@ -110,7 +110,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    options?: CinderChartOptions,
+    options?: WickChartOptions,
   ) {
     this.seriesDefinition = getSeries<TPoint, unknown>(options?.type ?? 'candlestick');
     this.renderer = new ChartRenderer(canvas, this.seriesDefinition, options);
@@ -152,7 +152,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
   /** Registers a plugin (marker, annotation, drawing tool, ...) drawn on
    * top of the chart every frame after the series and axes — see
    * `src/plugins/types.ts`. Adding overlay features this way, rather than
-   * by extending `CinderChart` itself, is what keeps the core closed to
+   * by extending `WickChart` itself, is what keeps the core closed to
    * modification: a marker implementation never needs to touch this file. */
   addPlugin(plugin: ChartPlugin<TPoint>): this {
     this.plugins.push(plugin);
@@ -776,7 +776,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
 }
 
 /**
- * `new CinderChart(canvas, { type: 'candlestick', style: {...} })` type-checks
+ * `new WickChart(canvas, { type: 'candlestick', style: {...} })` type-checks
  * even if `style` has nothing to do with `CandlestickStyle` — `type` is a
  * runtime string the registry resolves, so nothing ties it to a specific
  * `TStyle` at the type level (see `src/series/registry.ts`). This factory
@@ -785,12 +785,12 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
  *
  * A new series type gets the same treatment: export an equivalent
  * `create<Name>Chart` next to it (in your own module, or a file like this
- * one) rather than widening `CinderChartOptions` itself — that keeps every
+ * one) rather than widening `WickChartOptions` itself — that keeps every
  * series's style shape independent of every other's.
  */
 export function createCandlestickChart(
   canvas: HTMLCanvasElement,
-  options?: Omit<CinderChartOptions, 'type' | 'style'> & { style?: Partial<CandlestickStyle> },
-): CinderChart<Candle> {
-  return new CinderChart<Candle>(canvas, { ...options, type: 'candlestick' });
+  options?: Omit<WickChartOptions, 'type' | 'style'> & { style?: Partial<CandlestickStyle> },
+): WickChart<Candle> {
+  return new WickChart<Candle>(canvas, { ...options, type: 'candlestick' });
 }

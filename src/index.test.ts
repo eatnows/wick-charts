@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CinderChart, createCandlestickChart } from './index';
+import { WickChart, createCandlestickChart } from './index';
 import { createTestCanvas } from './testHelpers';
 import { resetWasmForTesting } from './wasm';
 import type { Candle } from './types';
@@ -36,7 +36,7 @@ function fakeTouchEvent(touches: Touch[]): TouchEvent {
   return { touches, preventDefault: () => {} } as unknown as TouchEvent;
 }
 
-function chartTouchHandlers(chart: CinderChart): {
+function chartTouchHandlers(chart: WickChart): {
   onTouchStart: (e: TouchEvent) => void;
   onTouchMove: (e: TouchEvent) => void;
   onTouchEnd: (e: TouchEvent) => void;
@@ -48,7 +48,7 @@ function chartTouchHandlers(chart: CinderChart): {
   };
 }
 
-describe('CinderChart', () => {
+describe('WickChart', () => {
   let canvas: HTMLCanvasElement;
 
   beforeEach(() => {
@@ -63,7 +63,7 @@ describe('CinderChart', () => {
   });
 
   it('sorts unsorted input candles ascending by time on setData', () => {
-    const chart = new CinderChart(canvas);
+    const chart = new WickChart(canvas);
     chart.setData([
       { time: 30, open: 1, high: 1, low: 1, close: 1 },
       { time: 10, open: 2, high: 2, low: 2, close: 2 },
@@ -74,7 +74,7 @@ describe('CinderChart', () => {
   });
 
   it('defaults the visible window to the most recent DEFAULT_VISIBLE_POINTS candles', () => {
-    const chart = new CinderChart(canvas);
+    const chart = new WickChart(canvas);
     chart.setData(makeSeries(500));
     const range = chart.getVisibleRange();
     expect(range.visibleCount).toBe(120);
@@ -83,7 +83,7 @@ describe('CinderChart', () => {
   });
 
   it('shows the whole series when it is narrower than the default window', () => {
-    const chart = new CinderChart(canvas);
+    const chart = new WickChart(canvas);
     chart.setData(makeSeries(10));
     const range = chart.getVisibleRange();
     expect(range.startIndex).toBe(0);
@@ -91,13 +91,13 @@ describe('CinderChart', () => {
   });
 
   it('render() does not throw before any data is set', () => {
-    const chart = new CinderChart(canvas);
+    const chart = new WickChart(canvas);
     expect(() => chart.render()).not.toThrow();
   });
 
   describe('panning by drag', () => {
     it('dragging right (mouse moves right) reveals earlier candles', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const before = chart.getVisibleRange().startIndex;
 
@@ -109,7 +109,7 @@ describe('CinderChart', () => {
     });
 
     it('dragging left reveals later candles', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       // the default view is pinned at the right (most recent) edge, so first
       // drag right (→ earlier candles) to make room to drag back left into.
@@ -126,7 +126,7 @@ describe('CinderChart', () => {
     });
 
     it('does not pan past either edge of the loaded data', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(50)); // narrower than DEFAULT_VISIBLE_POINTS, so already fully zoomed out
       fireMouse(canvas, 'mousedown', { clientX: 100, clientY: 100 });
       fireMouse(canvas, 'mousemove', { clientX: 100_000, clientY: 100 }); // absurd drag distance
@@ -140,7 +140,7 @@ describe('CinderChart', () => {
     it('scales drag distance by the backing-store/CSS pixel ratio', () => {
       // canvas backing store is 2x the CSS size — simulates devicePixelRatio 2
       const { canvas: hiDpiCanvas } = createTestCanvas(1600, 800, 800, 400);
-      const chart = new CinderChart(hiDpiCanvas);
+      const chart = new WickChart(hiDpiCanvas);
       chart.setData(makeSeries(1000));
       const before = chart.getVisibleRange().startIndex;
 
@@ -155,7 +155,7 @@ describe('CinderChart', () => {
 
   describe('zooming', () => {
     it('scrolling down (deltaY > 0) zooms out (more candles visible)', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000));
       const before = chart.getVisibleRange().visibleCount;
       fireWheel(canvas, { deltaX: 0, deltaY: 100, clientX: 400, clientY: 200 });
@@ -163,7 +163,7 @@ describe('CinderChart', () => {
     });
 
     it('scrolling up (deltaY < 0) zooms in (fewer candles visible)', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000, 0));
       // zoom out first so there's room to zoom back in
       fireWheel(canvas, { deltaX: 0, deltaY: 100, clientX: 400, clientY: 200 });
@@ -173,7 +173,7 @@ describe('CinderChart', () => {
     });
 
     it('a horizontal-dominant wheel gesture pans instead of zooming', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000));
       const before = chart.getVisibleRange();
       // the default view is pinned at the right edge, so only a negative
@@ -187,13 +187,13 @@ describe('CinderChart', () => {
 
   describe('price axis', () => {
     it('has no manual price range until the user touches the price axis', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(100));
       expect(chart.getValueRangeOverride()).toBeNull();
     });
 
     it('dragging inside the chart area also sets a manual price range (vertical pan)', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(100));
 
       fireMouse(canvas, 'mousedown', { clientX: 400, clientY: 100 });
@@ -205,7 +205,7 @@ describe('CinderChart', () => {
     });
 
     it('dragging the price-axis strip (right of chartWidth) scales the range without panning time', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(100));
       const beforeTime = chart.getVisibleRange();
 
@@ -221,14 +221,14 @@ describe('CinderChart', () => {
 
   describe('hover', () => {
     it('tracks the hovered candle on mousemove without a drag', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 });
       expect(chart.getHoveredPoint()).not.toBeNull();
     });
 
     it('clears the hover on mouseleave', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 100 });
       expect(chart.getHoveredPoint()).not.toBeNull();
@@ -238,7 +238,7 @@ describe('CinderChart', () => {
     });
 
     it('reports null hover when the cursor is over the price-axis strip', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       fireMouse(canvas, 'mousemove', { clientX: 770, clientY: 100 }); // inside the 64px price-axis strip
       expect(chart.getHoveredPoint()).toBeNull();
@@ -250,7 +250,7 @@ describe('CinderChart', () => {
       // the mouse up/down without crossing into a different candle must
       // still trigger a render — otherwise the line looks stuck in place
       // until the next candle-column change.
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
         cb(0);
@@ -279,7 +279,7 @@ describe('CinderChart', () => {
     // interfere with what's being asserted.
 
     it('requests more "before" candles once the window nears the left edge, and merges the result', async () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(30, 1000)); // 30 < DEFAULT_VISIBLE_POINTS → view starts at [0, 30)
       const loader = vi.fn(async (req: DataRequest) =>
         req.direction === 'before' ? makeSeries(15, 1000 - 15) : [],
@@ -291,7 +291,7 @@ describe('CinderChart', () => {
     });
 
     it('does not request "before" data when the window is far from the start of the series', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000));
       // default view sits on the most recent 120 of 1000 — startIndex=880, nowhere near 0
       const loader = vi.fn(async () => []);
@@ -301,7 +301,7 @@ describe('CinderChart', () => {
     });
 
     it('requests "after" data for a freshly-loaded series pinned to its most recent candle', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000));
       const loader = vi.fn(async () => []);
       chart.setDataLoader(loader, 20);
@@ -310,7 +310,7 @@ describe('CinderChart', () => {
     });
 
     it('stops re-requesting a direction once the loader reports it exhausted (returns empty)', async () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10)); // small enough that both edges are within threshold at once
       const loader = vi.fn(async () => []);
       chart.setDataLoader(loader, 20);
@@ -324,7 +324,7 @@ describe('CinderChart', () => {
     });
 
     it('does not fire a second overlapping request for the same direction while one is still in flight', async () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const pendingResolvers: Array<(candles: Candle[]) => void> = [];
       const loader = vi.fn(() => new Promise<Candle[]>((resolve) => pendingResolvers.push(resolve)));
@@ -340,7 +340,7 @@ describe('CinderChart', () => {
     });
 
     it('keeps the visible window stable (no jump) when candles are prepended', async () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10, 1000));
       const before = chart.getVisibleRange();
       const loader = vi.fn(async (req: DataRequest) =>
@@ -361,7 +361,7 @@ describe('CinderChart', () => {
 
   describe('touch input', () => {
     it('a single-finger drag pans the same way a mouse drag does', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
       const before = chart.getVisibleRange().startIndex;
@@ -374,7 +374,7 @@ describe('CinderChart', () => {
     });
 
     it('a single-finger drag starting on the price-axis strip scales price instead of panning', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(100));
       const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
       const beforeRange = chart.getVisibleRange();
@@ -389,7 +389,7 @@ describe('CinderChart', () => {
     });
 
     it('a two-finger pinch spreading apart zooms in (fewer candles visible)', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000, 0));
       // zoom out first via a wheel gesture so there's room to zoom back in
       fireWheel(canvas, { deltaX: 0, deltaY: 100, clientX: 400, clientY: 200 });
@@ -404,7 +404,7 @@ describe('CinderChart', () => {
     });
 
     it('a two-finger pinch coming together zooms out (more candles visible)', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(1000));
       const before = chart.getVisibleRange().visibleCount;
 
@@ -417,7 +417,7 @@ describe('CinderChart', () => {
     });
 
     it('a second finger landing cancels an in-progress single-finger drag', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
 
@@ -432,7 +432,7 @@ describe('CinderChart', () => {
     });
 
     it('lifting all fingers stops the drag the way mouseup does', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
 
@@ -457,7 +457,7 @@ describe('CinderChart', () => {
     });
 
     it('holding a finger still past the long-press duration inspects a candle instead of panning', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart } = chartTouchHandlers(chart);
       const before = chart.getVisibleRange();
@@ -470,7 +470,7 @@ describe('CinderChart', () => {
     });
 
     it('moving the finger before the long-press fires cancels it and pans normally instead', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
       const before = chart.getVisibleRange().startIndex;
@@ -484,7 +484,7 @@ describe('CinderChart', () => {
     });
 
     it('moving the finger while in scrub mode scrubs between candles without panning', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
 
@@ -502,7 +502,7 @@ describe('CinderChart', () => {
       // Regression test, touch counterpart of the mouse one above: the
       // crosshair's horizontal line follows the raw finger position, so it
       // must keep tracking even while the finger stays over the same candle.
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove } = chartTouchHandlers(chart);
 
@@ -527,7 +527,7 @@ describe('CinderChart', () => {
     });
 
     it('lifting the finger after scrubbing clears the hover, returning to the original state', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchEnd } = chartTouchHandlers(chart);
 
@@ -540,7 +540,7 @@ describe('CinderChart', () => {
     });
 
     it('a quick tap released before the long-press duration never enters scrub mode', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchEnd } = chartTouchHandlers(chart);
 
@@ -554,7 +554,7 @@ describe('CinderChart', () => {
 
   describe('destroy', () => {
     it('stops reacting to further input after destroy()', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       chart.destroy();
 
@@ -567,7 +567,7 @@ describe('CinderChart', () => {
     });
 
     it('cancels a pending scheduled render instead of letting it fire after teardown', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame');
 
@@ -581,7 +581,7 @@ describe('CinderChart', () => {
   describe('touch + pinch interaction edge cases', () => {
     it('clears a scrub-mode hover when a second finger lands to start a pinch', () => {
       vi.useFakeTimers();
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const { onTouchStart, onTouchMove, onTouchEnd } = chartTouchHandlers(chart);
 
@@ -602,13 +602,13 @@ describe('CinderChart', () => {
 
   describe('series type dispatch', () => {
     it('defaults to the built-in candlestick series when type is omitted', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       expect(() => chart.render()).not.toThrow();
     });
 
     it('throws a clear error for an unregistered type', () => {
-      expect(() => new CinderChart(canvas, { type: 'not-a-real-series' })).toThrow(/unknown series type/);
+      expect(() => new WickChart(canvas, { type: 'not-a-real-series' })).toThrow(/unknown series type/);
     });
   });
 
@@ -623,7 +623,7 @@ describe('CinderChart', () => {
 
   describe('plugins', () => {
     it('draws a registered plugin on top of the series every frame', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const draw = vi.fn();
 
@@ -636,7 +636,7 @@ describe('CinderChart', () => {
     });
 
     it('stops drawing a plugin once removed', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const draw = vi.fn();
       const plugin = { draw };
@@ -651,7 +651,7 @@ describe('CinderChart', () => {
     });
 
     it('gives the plugin pixel-space geometry for the current frame', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       let seenApi: { chartWidth: number; chartHeight: number } | undefined;
 
@@ -668,7 +668,7 @@ describe('CinderChart', () => {
     });
 
     it('lets a plugin call yForValue synchronously but throws if called after the frame ends', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       let stashedYForValue: ((value: number) => number) | undefined;
 
@@ -685,7 +685,7 @@ describe('CinderChart', () => {
 
     it('isolates canvas state between plugins with save/restore', () => {
       const { canvas: c, ctx } = createTestCanvas(800, 400);
-      const chart = new CinderChart(c);
+      const chart = new WickChart(c);
       chart.setData(makeSeries(10));
 
       chart.addPlugin({ draw: () => {} });
@@ -703,7 +703,7 @@ describe('CinderChart', () => {
 
     it('keeps rendering later plugins and does not throw when one plugin throws', () => {
       const { canvas: c } = createTestCanvas(800, 400);
-      const chart = new CinderChart(c);
+      const chart = new WickChart(c);
       chart.setData(makeSeries(10));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const secondDraw = vi.fn();
@@ -727,7 +727,7 @@ describe('CinderChart', () => {
     });
 
     it('getPlugins returns a snapshot copy, in registration order', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const first = { draw: () => {}, id: 'ma-20' };
       const second = { draw: () => {}, id: 'trend-1' };
@@ -744,7 +744,7 @@ describe('CinderChart', () => {
     });
 
     it('setPluginVisible hides a plugin from drawing and gesture claiming without removing it', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const draw = vi.fn();
       const onPointerDown = vi.fn(() => true);
@@ -765,7 +765,7 @@ describe('CinderChart', () => {
     });
 
     it('setPluginVisible is a no-op when no plugin matches the id', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(10));
       const draw = vi.fn();
       chart.addPlugin({ id: 'trend-1', draw });
@@ -778,7 +778,7 @@ describe('CinderChart', () => {
 
   describe('plugin pointer gestures (interactive plugins: drawing tools, etc.)', () => {
     it('lets a plugin claim a mousedown and suppresses the chart\'s own panning for that gesture', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const before = chart.getVisibleRange().startIndex;
       const onPointerMove = vi.fn();
@@ -796,7 +796,7 @@ describe('CinderChart', () => {
     });
 
     it('leaves panning to the chart when a plugin does not claim the gesture', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const before = chart.getVisibleRange().startIndex;
 
@@ -810,7 +810,7 @@ describe('CinderChart', () => {
     });
 
     it('never offers a price-axis-strip click to plugins', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const onPointerDown = vi.fn();
       chart.addPlugin({ draw: () => {}, onPointerDown });
@@ -822,7 +822,7 @@ describe('CinderChart', () => {
     });
 
     it('checks plugins in reverse-registration order and stops at the first to claim the gesture', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const first = { draw: () => {}, onPointerDown: vi.fn(() => false) };
       const second = { draw: () => {}, onPointerDown: vi.fn(() => true) };
@@ -843,7 +843,7 @@ describe('CinderChart', () => {
     });
 
     it('converts pointer position to a monotonic index and value', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const events: Array<{ index: number; value: number | null }> = [];
       chart.addPlugin({
@@ -868,7 +868,7 @@ describe('CinderChart', () => {
     });
 
     it('exposes xForIndex/yForValue as the exact inverse of the event\'s own index/value', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       let seen: import('./plugins/types').ChartPointerEvent | undefined;
       chart.addPlugin({
@@ -890,7 +890,7 @@ describe('CinderChart', () => {
     });
 
     it('lets a plugin hit-test a shape it stores in data space using the event\'s forward mapping', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
 
       // simulates a trend line already placed at a single data-space anchor
@@ -930,7 +930,7 @@ describe('CinderChart', () => {
     });
 
     it('supports touch: claiming a touchstart suppresses panning, and touchend fires onPointerUp', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const before = chart.getVisibleRange().startIndex;
       const onPointerUp = vi.fn();
@@ -946,7 +946,7 @@ describe('CinderChart', () => {
     });
 
     it('ends an active gesture (firing onPointerUp) when a second finger lands mid-gesture', () => {
-      const chart = new CinderChart(canvas);
+      const chart = new WickChart(canvas);
       chart.setData(makeSeries(500));
       const onPointerUp = vi.fn();
       chart.addPlugin({ draw: () => {}, onPointerDown: () => true, onPointerUp });

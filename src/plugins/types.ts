@@ -80,7 +80,7 @@ export interface ChartPointerEvent {
  * The extension point for anything that draws *on top of* a chart without
  * being the chart itself — price/event markers, alert lines, drawing
  * tools, annotations, indicator overlays. Register instances via
- * `CinderChart.addPlugin`; `ChartRenderer` calls `draw` once per frame,
+ * `WickChart.addPlugin`; `ChartRenderer` calls `draw` once per frame,
  * after the active series and axes, so plugin output always sits above the
  * plotted data.
  *
@@ -96,12 +96,12 @@ export interface ChartPointerEvent {
  * trend line, a drawing tool — anything placed or edited by the user,
  * rather than purely computed from data like an indicator) needs beyond
  * `draw`: a way to see raw pointer gestures on the chart, which
- * `CinderChart` would otherwise consume entirely for its own panning.
+ * `WickChart` would otherwise consume entirely for its own panning.
  */
 export interface ChartPlugin<TPoint extends SeriesPoint = SeriesPoint> {
   /**
    * Stable identifier for this plugin instance, opaque to the chart —
-   * only used to look a plugin back up via `CinderChart.setPluginVisible`
+   * only used to look a plugin back up via `WickChart.setPluginVisible`
    * once an app is managing a growing list of indicators/drawing tools and
    * no longer wants to hold onto every instance it created. Not required:
    * a plugin with no `id` can still be added/removed by reference via
@@ -116,14 +116,14 @@ export interface ChartPlugin<TPoint extends SeriesPoint = SeriesPoint> {
    * as before this field existed). Set to `false` to hide a plugin
    * without losing its state by removing it — e.g. an indicator or
    * drawing tool a user toggled off in a management UI but might turn
-   * back on. Toggle it via `CinderChart.setPluginVisible`, or mutate it
+   * back on. Toggle it via `WickChart.setPluginVisible`, or mutate it
    * directly and call `chart.render()`.
    */
   visible?: boolean;
   draw(api: PluginRenderApi<TPoint>): void;
   /**
    * Called on pointer down inside the chart's plotting area (not the
-   * price-axis strip). Return `true` to *claim* the gesture: `CinderChart`
+   * price-axis strip). Return `true` to *claim* the gesture: `WickChart`
    * then suppresses its own panning/hover for this pointer until it's
    * released, and routes `onPointerMove`/`onPointerUp` to this plugin and
    * no other. Return `false`/`undefined` (the default, if omitted) to

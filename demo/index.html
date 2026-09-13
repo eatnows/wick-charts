@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>cinder-charts demo</title>
+<title>wick-charts demo</title>
 <style>
   html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif}
   .wrap{display:flex;flex-direction:column;height:100%}
@@ -18,7 +18,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>cinder-charts</h1>
+    <h1>wick-charts</h1>
     <p>On-demand history loading — starts with 200 candles, more streams in as you pan</p>
   </header>
   <div class="hint">
@@ -34,9 +34,9 @@
 </div>
 
 <script type="module">
-  import { CinderChart } from '../dist/index.js';
+  import { WickChart } from '../dist/index.js';
 
-  // cinder-charts ships no indicators of its own (see the README's
+  // wick-charts ships no indicators of its own (see the README's
   // "Indicators" note) — this is a worked example of building one as a
   // ChartPlugin in application code, the same way any consuming app would.
   // period/color are just local constants here; a real app would expose
@@ -151,7 +151,7 @@
   }
 
   resizeCanvas();
-  const chart = new CinderChart(canvas, { style: { upColor: '#26a69a', downColor: '#ef5350' } });
+  const chart = new WickChart(canvas, { style: { upColor: '#26a69a', downColor: '#ef5350' } });
   chart.setDataLoader(loader, LOAD_THRESHOLD);
   chart.addPlugin(movingAveragePlugin(20, '#f0b90b'));
   chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));

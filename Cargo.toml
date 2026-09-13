@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["crates/cinderchart-core"]
+members = ["crates/wickchart-core"]

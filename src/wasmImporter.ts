@@ -5,5 +5,5 @@ import type { WasmModule } from './wasm.js';
  * importer instead of needing an actual `.wasm` binary in the test run.
  * Regenerate the target with `pnpm build:wasm`. */
 export function importRealWasm(): Promise<WasmModule> {
-  return import('../wasm-pkg/cinderchart_core.js') as unknown as Promise<WasmModule>;
+  return import('../wasm-pkg/wickchart_core.js') as unknown as Promise<WasmModule>;
 }
