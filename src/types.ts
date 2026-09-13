@@ -61,6 +61,19 @@ export interface Candle extends SeriesPoint {
   volume?: number;
 }
 
+/**
+ * A single value plotted against time — the point shape for the built-in
+ * `'line'` series (see `src/series/line.ts`), and the simplest possible
+ * instance of `SeriesPoint` beyond `Candle`: a plain time series with
+ * nothing OHLC-specific about it. `value` is `NaN`-tolerant: a `NaN`
+ * (or non-finite) value is treated as a gap — the line breaks there and
+ * resumes at the next real value, rather than plotting a bogus point or
+ * throwing.
+ */
+export interface LinePoint extends SeriesPoint {
+  value: number;
+}
+
 /** Text styling shared by every label the chart draws — axis ticks,
  * crosshair axis labels, and the hover legend. `axisSize`/`legendSize` are
  * separate since the legend has historically been drawn one px larger to
