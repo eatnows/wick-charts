@@ -2,9 +2,9 @@
 name = "cinderchart-core"
 version = "0.1.0"
 edition = "2021"
-description = "WASM compute core for cinderchart — coordinate scaling and indicator math, compiled to run at native speed in the browser."
+description = "WASM compute core for cinder-charts — domain-to-pixel coordinate scaling, compiled to run at native speed in the browser."
 license = "MIT"
-repository = "https://github.com/cinderchart/cinderchart"
+repository = "https://github.com/eatnows/cinder-charts"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
