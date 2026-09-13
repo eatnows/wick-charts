@@ -109,10 +109,18 @@ export interface ChartCrosshairOptions {
   labelPaddingY?: number;
 }
 
-/** Styling for the top-left hover legend (the OHLC(+volume) line). */
+/** Styling for the hover legend — a tooltip that follows the cursor/finger
+ * showing the OHLC(+volume) breakdown for the hovered point, offset up and
+ * to the right of it and clamped so it never runs off the chart edge. */
 export interface ChartLegendOptions {
-  /** Legend text color. Defaults to `'#c8c8c8'`. */
+  /** Legend text color. Defaults to `'#f0f0f0'`. */
   textColor?: string;
+  /** Tooltip background fill. Defaults to `'#3a3a3a'`. */
+  background?: string;
+  /** Horizontal padding, in px, inside the tooltip. Defaults to 8. */
+  paddingX?: number;
+  /** Vertical padding, in px, inside the tooltip. Defaults to 6. */
+  paddingY?: number;
 }
 
 export interface CinderChartOptions {

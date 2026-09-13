@@ -138,13 +138,19 @@ const chart = createCandlestickChart(canvas, {
     labelPaddingY: 3,
   },
   legend: {
-    textColor: '#c8c8c8',
+    textColor: '#f0f0f0', // the OHLC(+volume) hover tooltip's text
+    background: '#3a3a3a', // the tooltip's background fill
+    paddingX: 8, // horizontal padding inside the tooltip
+    paddingY: 6, // vertical padding inside the tooltip
   },
 });
 ```
 
 Every value shown above is the built-in default — this example changes nothing; it's a
-reference for what exists. `createCandlestickChart` type-checks `style` against
+reference for what exists. The `legend` options style a small tooltip — one line per
+`formatLegend()` part — that follows the hovered pixel like a speech bubble, offset up and to
+the right of it, and clamped so it never runs off the chart's edges. `createCandlestickChart`
+type-checks `style` against
 `CandlestickStyle`; the more general `new CinderChart(canvas, { type: 'candlestick', style })`
 also works but doesn't — see "Series types" below for why, if you're curious.
 

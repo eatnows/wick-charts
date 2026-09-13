@@ -85,13 +85,13 @@ describe('ChartRenderer (candlestick)', () => {
     renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [] });
     const fillTextCallsWithHover = ctx.fillText.mock.calls.length;
 
-    // hovering adds exactly three more fillText calls versus the no-hover render:
-    // the price-axis label, the time-axis label, and the OHLC legend line
-    expect(fillTextCallsWithHover).toBe(fillTextCallsWithoutHover + 3);
+    // hovering adds exactly six more fillText calls versus the no-hover render:
+    // the price-axis label, the time-axis label, and the OHLC tooltip's 4 lines
+    expect(fillTextCallsWithHover).toBe(fillTextCallsWithoutHover + 6);
 
-    const legendCall = ctx.fillText.mock.calls[ctx.fillText.mock.calls.length - 1] as [string, number, number];
-    expect(legendCall[0]).toContain('O ');
-    expect(legendCall[0]).toContain('C ');
+    const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
+    expect(texts.some((t) => t.startsWith('O '))).toBe(true);
+    expect(texts.some((t) => t.startsWith('C '))).toBe(true);
   });
 
   it('includes volume in the legend only when the hovered candle has it', () => {
@@ -165,9 +165,10 @@ describe('ChartRenderer (candlestick)', () => {
       const renderer = new ChartRenderer(canvas, candlestickSeries);
       renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: null, plugins: [] });
 
-      // with no price line, only the time label chip's background rect is added
-      // on top of the candle bodies (one fillRect each)
-      expect(ctx.fillRect.mock.calls.length).toBe(SAMPLE.length + 1);
+      // with no price line, only the time label chip's and the legend
+      // tooltip's background rects are added on top of the candle bodies
+      // (one fillRect each) — no price label chip
+      expect(ctx.fillRect.mock.calls.length).toBe(SAMPLE.length + 2);
       // the legend (which doesn't depend on hoverY at all) still draws
       const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
       expect(texts.some((t) => t.includes('O '))).toBe(true);
@@ -312,17 +313,14 @@ describe('ChartRenderer (candlestick)', () => {
         plugins: [],
       });
 
-      // the last fillRect (the time-axis label chip's background) uses labelBackground,
-      // and its height reflects the custom vertical padding (axisSize 10 + 10*2 = 30)
-      const lastFillRect = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
-        number,
-        number,
-        number,
-        number,
-      ];
-      expect(lastFillRect[3]).toBe(30);
-      // fillStyle right after the last fillRect call is the background color set for it
-      expect(ctx.fillStyle).not.toBe('#444444'); // fillStyle is reassigned to labelTextColor right after for the text
+      // the time-axis label chip's background rect (found by its y === chartHeight,
+      // same convention used elsewhere) reflects the custom vertical padding
+      // (axisSize 10 + labelPaddingY 10*2 = 30)
+      const timeChipRect = ctx.fillRect.mock.calls.find(
+        (call) => (call as [number, number, number, number])[1] === renderer.chartHeight,
+      ) as [number, number, number, number] | undefined;
+      expect(timeChipRect).toBeDefined();
+      expect(timeChipRect![3]).toBe(30);
       const priceLabelText = ctx.fillText.mock.calls.find((call) => call[2] === 100)?.[0];
       expect(priceLabelText).toBeDefined();
     });
@@ -338,6 +336,84 @@ describe('ChartRenderer (candlestick)', () => {
         plugins: [],
       });
       expect(ctx.fillStyle).toBe('#666666'); // the legend's fillStyle is the last one set
+    });
+
+    it('positions the OHLC tooltip near the hovered pixel, not a fixed corner', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      const viewport = new Viewport(SAMPLE.length);
+
+      // the tooltip is drawn last in each render pass — nothing else paints a
+      // fillRect after it (see renderCrosshairAndLegend's draw order), so the
+      // last call recorded right after each render() is its tooltip box
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [] });
+      const boxNearTop = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 300, plugins: [] });
+      const boxNearBottom = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+
+      // moving the hover row down moves the tooltip's top edge down too
+      expect(boxNearBottom[1]).toBeGreaterThan(boxNearTop[1]);
+    });
+
+    it('clamps the tooltip so it never runs off the top or left chart edge', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      // hoverIndex 0 at the very left edge, hoverY near the very top — both the
+      // natural (x + gap, y - height - gap) position and a naive clamp could
+      // still go negative without the chart-edge clamp
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 0,
+        hoverY: 2,
+        plugins: [],
+      });
+
+      // the tooltip is drawn last in the render pass — nothing else paints a
+      // fillRect after it (see renderCrosshairAndLegend's draw order)
+      const tooltipBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      expect(tooltipBox[0]).toBeGreaterThanOrEqual(0);
+      expect(tooltipBox[1]).toBeGreaterThanOrEqual(0);
+    });
+
+    it('uses a custom legend background and padding', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        legend: { background: '#777777', paddingX: 20, paddingY: 20 },
+      });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+
+      // the tooltip is drawn last in the render pass — nothing else paints a
+      // fillRect after it (see renderCrosshairAndLegend's draw order)
+      const tooltipBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      // 4 lines (O/H/L/C) * (legendSize 11 + 4) + paddingY 20*2 = 100
+      expect(tooltipBox[3]).toBe(100);
     });
 
     it('draws fewer axis tick labels with a smaller priceTickCount/timeMaxTicks', () => {

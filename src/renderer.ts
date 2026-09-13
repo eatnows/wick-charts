@@ -41,8 +41,14 @@ const DEFAULT_CROSSHAIR: Required<ChartCrosshairOptions> = {
 };
 
 const DEFAULT_LEGEND: Required<ChartLegendOptions> = {
-  textColor: '#c8c8c8',
+  textColor: '#f0f0f0',
+  background: '#3a3a3a',
+  paddingX: 8,
+  paddingY: 6,
 };
+
+/** Gap, in px, between the hovered pixel and the tooltip's nearest edge. */
+const LEGEND_CURSOR_GAP = 12;
 
 export interface RenderInput<TPoint extends SeriesPoint> {
   /** Every point, sorted ascending by normalized time. */
@@ -368,12 +374,43 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
 
     const parts = seriesDefinition.formatLegend?.(point, style) ?? [];
     if (parts.length === 0) return;
+    this.renderHoverTooltip(parts, x, hoverY, chartWidth, chartHeight);
+  }
 
+  /** The OHLC(+volume) tooltip — floats near the hovered pixel like a
+   * speech bubble, one line per part, rather than a fixed banner glued to
+   * a corner of the canvas. Offset up-and-right of the cursor/finger and
+   * clamped to both chart edges so it never runs off-screen, including
+   * when there's no `hoverY` to anchor to (a series with no primary value
+   * still gets a legend, just pinned near the top at the hovered column). */
+  private renderHoverTooltip(
+    lines: string[],
+    x: number,
+    hoverY: number | null,
+    chartWidth: number,
+    chartHeight: number,
+  ): void {
+    const { ctx, font, legend } = this;
     ctx.font = this.legendFont();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = this.legend.textColor;
-    ctx.fillText(parts.join('   '), 8, 8);
+
+    const lineHeight = font.legendSize + 4;
+    const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const boxWidth = textWidth + legend.paddingX * 2;
+    const boxHeight = lines.length * lineHeight + legend.paddingY * 2;
+
+    const anchorY = hoverY ?? 0;
+    const left = Math.min(Math.max(x + LEGEND_CURSOR_GAP, 0), Math.max(0, chartWidth - boxWidth));
+    const top = Math.min(Math.max(anchorY - boxHeight - LEGEND_CURSOR_GAP, 0), Math.max(0, chartHeight - boxHeight));
+
+    ctx.fillStyle = legend.background;
+    ctx.fillRect(left, top, boxWidth, boxHeight);
+
+    ctx.fillStyle = legend.textColor;
+    lines.forEach((line, i) => {
+      ctx.fillText(line, left + legend.paddingX, top + legend.paddingY + i * lineHeight);
+    });
   }
 
   /** The highlighted price-axis label that follows the crosshair's
