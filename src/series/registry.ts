@@ -31,7 +31,7 @@ export function registerSeries<TPoint extends SeriesPoint, TStyle>(
 export function getSeries<TPoint extends SeriesPoint, TStyle>(type: string): SeriesDefinition<TPoint, TStyle> {
   const definition = registry.get(type);
   if (!definition) {
-    throw new Error(`cinderchart: unknown series type "${type}" — is it registered (registerSeries) and imported?`);
+    throw new Error(`cinder-charts: unknown series type "${type}" — is it registered (registerSeries) and imported?`);
   }
   return definition as SeriesDefinition<TPoint, TStyle>;
 }

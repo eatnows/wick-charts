@@ -91,7 +91,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     options: CinderChartOptions = {},
   ) {
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('cinderchart: canvas 2d context unavailable');
+    if (!ctx) throw new Error('cinder-charts: canvas 2d context unavailable');
     this.ctx = ctx;
     this.background = options.background ?? DEFAULT_BACKGROUND;
     this.style = { ...(seriesDefinition.defaultStyle as object), ...(options.style ?? {}) };
@@ -208,7 +208,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           yForValue: (value) => {
             if (frameEnded) {
               throw new Error(
-                'cinderchart: PluginRenderApi.yForValue called after its frame ended — ' +
+                'cinder-charts: PluginRenderApi.yForValue called after its frame ended — ' +
                   'only call it synchronously inside ChartPlugin.draw()',
               );
             }
@@ -234,7 +234,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           try {
             plugin.draw(api);
           } catch (error) {
-            console.error('cinderchart: a plugin threw during draw()', error);
+            console.error('cinder-charts: a plugin threw during draw()', error);
           } finally {
             ctx.restore();
           }

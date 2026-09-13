@@ -47,7 +47,7 @@ const strategies: TimeStrategy[] = [
     toUnixSeconds: (time) => {
       const parsedMs = Date.parse(time as string);
       if (Number.isNaN(parsedMs)) {
-        throw new Error(`cinderchart: could not parse time string "${String(time)}" as ISO 8601`);
+        throw new Error(`cinder-charts: could not parse time string "${String(time)}" as ISO 8601`);
       }
       return parsedMs / 1000;
     },
@@ -61,11 +61,11 @@ const strategies: TimeStrategy[] = [
 export function toUnixSeconds(time: CinderTime): number {
   const strategy = strategies.find((s) => s.test(time));
   if (!strategy) {
-    throw new Error(`cinderchart: unrecognized time value ${JSON.stringify(time)}`);
+    throw new Error(`cinder-charts: unrecognized time value ${JSON.stringify(time)}`);
   }
   const seconds = strategy.toUnixSeconds(time);
   if (!Number.isFinite(seconds)) {
-    throw new Error(`cinderchart: "${strategy.name}" strategy produced a non-finite time for ${JSON.stringify(time)}`);
+    throw new Error(`cinder-charts: "${strategy.name}" strategy produced a non-finite time for ${JSON.stringify(time)}`);
   }
   return seconds;
 }

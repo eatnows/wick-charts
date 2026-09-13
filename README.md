@@ -1,4 +1,4 @@
-# cinderchart
+# cinder-charts
 
 An open-source financial charting library. WASM (Rust) for compute, Canvas2D for rendering.
 
@@ -6,7 +6,7 @@ An open-source financial charting library. WASM (Rust) for compute, Canvas2D for
 
 A serious trading UI needs more than a candlestick renderer on a page — drawing tools,
 multi-pane indicator stacks, replay, and large-series performance all matter once real
-usage starts. cinderchart aims to cover that ground natively from the start, while keeping
+usage starts. cinder-charts aims to cover that ground natively from the start, while keeping
 rendering on the simplest thing that can possibly work (Canvas2D — no WebGL until profiling
 says it's actually needed).
 
@@ -19,8 +19,8 @@ own project, keeping them siblings — see "Install" below for why that layout m
 ### Install
 
 ```bash
-git clone <this-repo> cinderchart
-cd cinderchart
+git clone <this-repo> cinder-charts
+cd cinder-charts
 pnpm install
 pnpm build:wasm   # requires the Rust toolchain + wasm-pack; produces wasm-pkg/
 pnpm build        # produces dist/
@@ -40,7 +40,7 @@ silently rather than crashing.
 ```
 
 ```ts
-import { createCandlestickChart } from 'cinderchart';
+import { createCandlestickChart } from 'cinder-charts';
 
 const canvas = document.getElementById('chart') as HTMLCanvasElement;
 
@@ -299,7 +299,7 @@ how to draw the visible points, what a hover legend says — to a
 `SeriesDefinition` (see `src/series/types.ts`) resolved at construction time from
 `options.type` via a small registry (`src/series/registry.ts`). `src/series/candlestick.ts`
 is the reference implementation: it registers itself as `'candlestick'` on import, which is
-why importing `cinderchart` at all is enough to make that type available without the caller
+why importing `cinder-charts` at all is enough to make that type available without the caller
 registering anything.
 
 Adding a second chart type (line, area, bar, ...) means writing one new file that
@@ -361,7 +361,7 @@ two things `draw()` alone can't give it, both added specifically to make that bu
 
 ### Indicators (moving averages, Bollinger Bands, ...): deliberately not included
 
-cinderchart ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
+cinder-charts ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
 and nothing built on top of it. This was a real decision, not an oversight — charting
 libraries generally land somewhere on a spectrum: some ship no indicators at all, only a
 generic primitive/plugin API plus docs on building your own, leaving actual indicators to a
@@ -371,7 +371,7 @@ opt-in modules on top of a public extension class, so a consumer who never touch
 never pays for them; and some have no indicator concept at all, treating an indicator as
 nothing more than an ordinary dataset the application computes and plots itself.
 
-cinderchart follows the first pattern: indicator math has too many real conventions (SMA vs.
+cinder-charts follows the first pattern: indicator math has too many real conventions (SMA vs.
 EMA, population vs. sample standard deviation, Wilder's smoothing for RSI, ...) for a charting
 engine to pick one and call it correct for everyone, and every one bundled is one more thing
 this library has to maintain forever. `demo/index.html` has a from-scratch moving-average
