@@ -88,6 +88,27 @@ export interface ChartPointerEvent {
  * `CinderChart` would otherwise consume entirely for its own panning.
  */
 export interface ChartPlugin<TPoint extends SeriesPoint = SeriesPoint> {
+  /**
+   * Stable identifier for this plugin instance, opaque to the chart —
+   * only used to look a plugin back up via `CinderChart.setPluginVisible`
+   * once an app is managing a growing list of indicators/drawing tools and
+   * no longer wants to hold onto every instance it created. Not required:
+   * a plugin with no `id` can still be added/removed by reference via
+   * `addPlugin`/`removePlugin`, it just can't be targeted by
+   * `setPluginVisible`. Uniqueness across the chart's plugins is the
+   * caller's responsibility — the chart doesn't enforce it.
+   */
+  id?: string;
+  /**
+   * Whether this plugin currently draws and can claim pointer gestures.
+   * Defaults to `true` (a plugin with no `visible` field behaves exactly
+   * as before this field existed). Set to `false` to hide a plugin
+   * without losing its state by removing it — e.g. an indicator or
+   * drawing tool a user toggled off in a management UI but might turn
+   * back on. Toggle it via `CinderChart.setPluginVisible`, or mutate it
+   * directly and call `chart.render()`.
+   */
+  visible?: boolean;
   draw(api: PluginRenderApi<TPoint>): void;
   /**
    * Called on pointer down inside the chart's plotting area (not the

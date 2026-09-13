@@ -251,6 +251,30 @@ the mechanism but would fight with panning in a real app (every drag becomes a n
 real drawing tool gates `onPointerDown` behind its own "tool active" state (a toggle button,
 a keyboard modifier, whatever fits the app), only claiming gestures while armed.
 
+#### Managing a growing list of plugins
+
+An app with more than a couple of indicators/drawing tools attached usually wants a UI for
+them — a panel listing what's currently on the chart, with a way to hide or remove each one —
+rather than holding onto every instance it ever passed to `addPlugin` by hand. Give a plugin an
+`id` and the chart can look it back up without the app tracking the object reference itself:
+
+```ts
+chart.addPlugin({ id: 'ma-20', draw(api) { /* ... */ } });
+chart.addPlugin({ id: 'trend-1', draw(api) { /* ... */ }, onPointerDown, onPointerMove, onPointerUp });
+
+chart.getPlugins(); // [{ id: 'ma-20', ... }, { id: 'trend-1', ... }] — a snapshot, safe to render a list from
+
+chart.setPluginVisible('ma-20', false); // hides it and re-renders, but keeps its state —
+                                         // toggle it back on with `true` later
+```
+
+`visible` defaults to `true`; a hidden plugin is skipped both when drawing and when a pointer
+gesture is being offered around, so a hidden drawing tool can't be nudged by an accidental
+click while it's toggled off. `id` is optional and opaque to the chart — it's never generated
+or validated for uniqueness, just compared with `===` when you call `setPluginVisible`. A
+plugin with no `id` still works exactly as before; it just can't be targeted that way, only by
+holding onto its reference and calling `removePlugin` directly.
+
 ### Cleanup
 
 Call `chart.destroy()` when you're done with a chart (component unmount, etc.) — it removes a

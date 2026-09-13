@@ -165,6 +165,26 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     return this;
   }
 
+  /** Every currently-registered plugin, in registration order — for an app
+   * building a management UI (a list of attached indicators/drawing tools
+   * with visibility toggles or delete buttons) without maintaining its own
+   * parallel bookkeeping of every `addPlugin` call. A copy, not a live
+   * view: mutating the returned array doesn't affect the chart. */
+  getPlugins(): readonly ChartPlugin<TPoint>[] {
+    return [...this.plugins];
+  }
+
+  /** Shows or hides every plugin whose `id` matches (see `ChartPlugin.id`)
+   * and re-renders. A no-op, not an error, if nothing matches — plugins
+   * with no `id` set are never matched. */
+  setPluginVisible(id: string, visible: boolean): this {
+    for (const plugin of this.plugins) {
+      if (plugin.id === id) plugin.visible = visible;
+    }
+    this.scheduleRender();
+    return this;
+  }
+
   render(): void {
     this.renderer.render({
       sorted: this.sorted,
@@ -690,6 +710,7 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     const event = this.pointerEventAt(x, y);
     for (let i = this.plugins.length - 1; i >= 0; i--) {
       const plugin = this.plugins[i]!;
+      if (plugin.visible === false) continue;
       if (plugin.onPointerDown?.(event)) {
         this.activeGesturePlugin = plugin;
         return true;

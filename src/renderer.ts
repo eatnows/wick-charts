@@ -229,6 +229,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           allPoints: sorted,
         };
         for (const plugin of plugins) {
+          if (plugin.visible === false) continue;
           // save/restore isolates each plugin's canvas state (strokeStyle,
           // lineDash, ...) from the next one — a plugin that forgets to
           // clean up after itself can't bleed style into whatever draws

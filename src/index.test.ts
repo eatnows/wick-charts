@@ -5,6 +5,7 @@ import { createTestCanvas } from './testHelpers';
 import { resetWasmForTesting } from './wasm';
 import type { Candle } from './types';
 import type { DataRequest } from './dataSource';
+import type { ChartPlugin } from './plugins/types';
 
 function makeSeries(count: number, startTime = 0): Candle[] {
   return Array.from({ length: count }, (_, i) => {
@@ -722,6 +723,55 @@ describe('CinderChart', () => {
       // console.error once the spy below is restored — destroy() cancels it.
       chart.destroy();
       errorSpy.mockRestore();
+    });
+
+    it('getPlugins returns a snapshot copy, in registration order', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      const first = { draw: () => {}, id: 'ma-20' };
+      const second = { draw: () => {}, id: 'trend-1' };
+
+      chart.addPlugin(first);
+      chart.addPlugin(second);
+
+      const plugins = chart.getPlugins();
+      expect(plugins).toEqual([first, second]);
+
+      // mutating the returned array doesn't affect the chart's own list
+      (plugins as ChartPlugin[]).push({ draw: () => {} });
+      expect(chart.getPlugins()).toHaveLength(2);
+    });
+
+    it('setPluginVisible hides a plugin from drawing and gesture claiming without removing it', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      const draw = vi.fn();
+      const onPointerDown = vi.fn(() => true);
+
+      chart.addPlugin({ id: 'trend-1', draw, onPointerDown });
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(1);
+
+      chart.setPluginVisible('trend-1', false);
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(1); // no additional call while hidden
+
+      chart.setPluginVisible('trend-1', true);
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(2); // drawing again once shown
+
+      expect(chart.getPlugins()).toHaveLength(1); // never removed, just toggled
+    });
+
+    it('setPluginVisible is a no-op when no plugin matches the id', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(10));
+      const draw = vi.fn();
+      chart.addPlugin({ id: 'trend-1', draw });
+
+      expect(() => chart.setPluginVisible('does-not-exist', false)).not.toThrow();
+      chart.render();
+      expect(draw).toHaveBeenCalledTimes(1);
     });
   });
 
