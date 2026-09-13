@@ -1,6 +1,28 @@
 # cinder-charts
 
+[![npm version](https://img.shields.io/npm/v/cinder-charts.svg)](https://www.npmjs.com/package/cinder-charts)
+[![license](https://img.shields.io/npm/l/cinder-charts.svg)](./LICENSE)
+
 An open-source financial charting library. WASM (Rust) for compute, Canvas2D for rendering.
+
+## Contents
+
+- [Why](#why)
+- [Requirements](#requirements)
+- [Usage](#usage)
+  - [Install](#install)
+  - [Quick start](#quick-start)
+  - [Candle data](#candle-data)
+  - [Styling](#styling)
+  - [Reading chart state](#reading-chart-state)
+  - [Loading more history on demand](#loading-more-history-on-demand)
+  - [Extending: plugins](#extending-plugins)
+  - [Cleanup](#cleanup)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Status](#status)
+- [License](#license)
 
 ## Why
 
@@ -10,28 +32,39 @@ usage starts. cinder-charts aims to cover that ground natively from the start, w
 rendering on the simplest thing that can possibly work (Canvas2D — no WebGL until profiling
 says it's actually needed).
 
-## Usage
+## Requirements
 
-Not published to npm yet — for now, clone this repo, build it, and import from its `dist/`
-(either via a local path/workspace dependency, or by copying `dist/` and `wasm-pkg/` into your
-own project, keeping them siblings — see "Install" below for why that layout matters).
+- **A browser, not Node/SSR.** The chart draws into a real `<canvas>` element and reads
+  `devicePixelRatio`/pointer events directly — there's no server-side rendering path. In a
+  framework with SSR (Next.js, Nuxt, SvelteKit, ...), construct the chart only on the client
+  (inside `useEffect`, `onMounted`, or the equivalent for your framework).
+- **A bundler that can load `.wasm` as an asset** — Vite, webpack 5+, Rollup with a WASM
+  plugin, or similar. The WASM module is loaded via a relative dynamic `import()`
+  (`wasmImporter.ts`) the way `wasm-pack --target web` output expects; every mainstream
+  bundler handles this out of the box (verified against a plain Vite build as part of this
+  package's own release checklist). A bundler that can't resolve it isn't a hard failure —
+  see the note on `wasm-pkg/` under [Install](#install) — but coordinate scaling runs
+  entirely on the slower JS fallback if it never loads.
+- **TypeScript is optional.** The library is written in TypeScript and ships its own `.d.ts`
+  files, but nothing about the API requires it — every example below works unchanged with a
+  `.js` file and no type annotations.
+
+## Usage
 
 ### Install
 
 ```bash
-git clone <this-repo> cinder-charts
-cd cinder-charts
-pnpm install
-pnpm build:wasm   # requires the Rust toolchain + wasm-pack; produces wasm-pkg/
-pnpm build        # produces dist/
+npm install cinder-charts
+# or: pnpm add cinder-charts / yarn add cinder-charts
 ```
 
-`dist/` and `wasm-pkg/` must stay siblings (the compiled JS does `import('../wasm-pkg/...')`
-relative to its own location). If you copy the library into another project rather than
-depending on it in place, copy both directories together. This isn't a hard requirement,
-though — a missing or unreachable `wasm-pkg/` is caught internally and the chart falls back to
-the plain-JS scale for every frame (see "WASM" below), so a broken path degrades performance
-silently rather than crashing.
+`dist/` and `wasm-pkg/` ship together inside the package and must stay siblings — the compiled
+JS does `import('../wasm-pkg/...')` relative to its own location, which is already how the
+package is laid out once installed, so this only matters if you copy files out of
+`node_modules` by hand instead of depending on the package normally. A missing or unreachable
+`wasm-pkg/` isn't a hard failure either way — it's caught internally and the chart falls back
+to the plain-JS scale for every frame (see [Architecture](#architecture)), so a broken path
+degrades performance silently rather than crashing.
 
 ### Quick start
 
@@ -451,9 +484,17 @@ this library has to maintain forever. `demo/index.html` has a from-scratch movin
 `ChartPlugin` as a worked example of what building one looks like — period and color included,
 entirely in application code, not imported from the library.
 
+## Development
+
+Building from source — for contributors, or if you'd rather depend on a local checkout than
+the published package:
+
 ```bash
-# TypeScript
+git clone https://github.com/eatnows/cinder-charts.git
+cd cinder-charts
 pnpm install
+
+# TypeScript
 pnpm build:wasm   # wasm-pack build → wasm-pkg/ (gitignored, regenerate after touching the Rust crate)
 pnpm test         # vitest
 pnpm build        # tsc
@@ -463,6 +504,18 @@ pnpm demo         # builds both, then serves demo/index.html locally
 cargo test                                        # native unit tests
 cargo check --target wasm32-unknown-unknown        # compiles for the wasm target
 ```
+
+`pnpm build` cleans `dist/` first, so it's safe to rerun after removing or renaming source
+files — nothing compiled from a deleted file lingers into the next build.
+
+## Contributing
+
+Issues and pull requests are welcome — for anything nontrivial, opening an issue first to
+talk through the approach is appreciated, especially around the "core only, no built-in
+indicators/drawing tools" boundary described above, since that's a deliberate design stance
+rather than a gap waiting to be filled. Run the checks above (`pnpm test`, `pnpm build`, and
+`cargo test`/`cargo check` if the Rust crate changed) before opening a PR — there's no CI
+configured yet, so these are the same checks a maintainer will run by hand.
 
 ## Status
 
@@ -481,8 +534,8 @@ overlays plus, now, claimable pointer gestures for interactive tools — see "Pl
 has no built-in users (see "Indicators" above for why) beyond `demo/index.html`'s example. No
 concrete drawing tool ships yet, only the mechanism a trend line or similar would be built
 on. No multi-pane support yet (volume shares the candlestick pane rather than getting its
-own). Not published to npm.
+own). See [CHANGELOG.md](./CHANGELOG.md) for what shipped in each release.
 
 ## License
 
-MIT
+[MIT](./LICENSE)
