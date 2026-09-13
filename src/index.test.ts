@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WickChart, createCandlestickChart } from './index';
+import { WickChart, createCandlestickChart, createLineChart } from './index';
 import { createTestCanvas } from './testHelpers';
 import { resetWasmForTesting } from './wasm';
 import type { Candle } from './types';
@@ -610,6 +610,12 @@ describe('WickChart', () => {
     it('throws a clear error for an unregistered type', () => {
       expect(() => new WickChart(canvas, { type: 'not-a-real-series' })).toThrow(/unknown series type/);
     });
+
+    it('renders a line series via type: "line"', () => {
+      const chart = new WickChart(canvas, { type: 'line' });
+      chart.setData(Array.from({ length: 10 }, (_, i) => ({ time: i, value: 100 + i })));
+      expect(() => chart.render()).not.toThrow();
+    });
   });
 
   describe('createCandlestickChart', () => {
@@ -618,6 +624,26 @@ describe('WickChart', () => {
       chart.setData(makeSeries(10));
       expect(() => chart.render()).not.toThrow();
       expect(chart.getPointCount()).toBe(10);
+    });
+  });
+
+  describe('createLineChart', () => {
+    it('builds a working line chart with type-checked style options', () => {
+      const chart = createLineChart(canvas, { style: { lineColor: '#00ff00' } });
+      chart.setData(Array.from({ length: 10 }, (_, i) => ({ time: i, value: 100 + i })));
+      expect(() => chart.render()).not.toThrow();
+      expect(chart.getPointCount()).toBe(10);
+    });
+
+    it('reports the hovered point\'s value the same way a candlestick chart reports OHLC', () => {
+      const { canvas: c } = createTestCanvas(800, 400);
+      const chart = createLineChart(c);
+      chart.setData(Array.from({ length: 20 }, (_, i) => ({ time: i, value: 100 + i })));
+      chart.render();
+
+      fireMouse(c, 'mousemove', { clientX: 100, clientY: 100 });
+      expect(chart.getHoveredPoint()).not.toBeNull();
+      expect(typeof chart.getHoveredPoint()!.value).toBe('number');
     });
   });
 

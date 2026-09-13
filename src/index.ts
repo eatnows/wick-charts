@@ -9,12 +9,22 @@ import { loadWasm } from './wasm.js';
 import { importRealWasm } from './wasmImporter.js';
 import type { ChartPlugin, ChartPointerEvent } from './plugins/types.js';
 import type { CandlestickStyle } from './series/candlestick.js';
+import type { LineStyle } from './series/line.js';
 import type { SeriesDefinition } from './series/types.js';
-import type { Candle, PaneOptions, ResolvedPaneOptions, WickChartOptions, SeriesPoint, ValueRange } from './types.js';
+import type {
+  Candle,
+  LinePoint,
+  PaneOptions,
+  ResolvedPaneOptions,
+  WickChartOptions,
+  SeriesPoint,
+  ValueRange,
+} from './types.js';
 
 export type {
   BusinessDay,
   Candle,
+  LinePoint,
   PaneOptions,
   WickChartOptions,
   WickTime,
@@ -30,13 +40,15 @@ export { mergeSeriesPoints } from './mergeSeries.js';
 export { registerSeries, getSeries } from './series/registry.js';
 export type { SeriesDefinition, SeriesDrawContext } from './series/types.js';
 export type { CandlestickStyle } from './series/candlestick.js';
-// Also registers the 'candlestick' type as a module-load side effect — see
-// src/series/candlestick.ts and src/series/registry.ts. A new series type
-// gets the same treatment: implement SeriesDefinition, export it here (or
-// have the consuming app import it directly before constructing a chart of
-// that type), and `type: '<its key>'` becomes usable with no other change
-// to this file.
+export type { LineStyle } from './series/line.js';
+// Also registers 'candlestick'/'line' as a module-load side effect — see
+// src/series/candlestick.ts, src/series/line.ts, and src/series/registry.ts.
+// A new series type gets the same treatment: implement SeriesDefinition,
+// export it here (or have the consuming app import it directly before
+// constructing a chart of that type), and `type: '<its key>'` becomes
+// usable with no other change to this file.
 export { candlestickSeries } from './series/candlestick.js';
+export { lineSeries } from './series/line.js';
 export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
@@ -876,4 +888,18 @@ export function createCandlestickChart(
   options?: Omit<WickChartOptions, 'type' | 'style'> & { style?: Partial<CandlestickStyle> },
 ): WickChart<Candle> {
   return new WickChart<Candle>(canvas, { ...options, type: 'candlestick' });
+}
+
+/**
+ * The second series type's equivalent of `createCandlestickChart` above —
+ * pins `TPoint` (`LinePoint`) and `TStyle` (`LineStyle`) so `style` is
+ * fully checked here the same way, rather than accepted as the untyped
+ * `Record<string, unknown>` `WickChartOptions.style` allows for `new
+ * WickChart(canvas, { type: 'line', style })`.
+ */
+export function createLineChart(
+  canvas: HTMLCanvasElement,
+  options?: Omit<WickChartOptions, 'type' | 'style'> & { style?: Partial<LineStyle> },
+): WickChart<LinePoint> {
+  return new WickChart<LinePoint>(canvas, { ...options, type: 'line' });
 }
