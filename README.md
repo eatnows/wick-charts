@@ -21,6 +21,7 @@ npm install wick-charts
   - [Reading chart state](#reading-chart-state)
   - [Loading more history on demand](#loading-more-history-on-demand)
   - [Extending: plugins](#extending-plugins)
+  - [Multi-pane indicators](#multi-pane-indicators)
   - [Cleanup](#cleanup)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -354,6 +355,58 @@ or validated for uniqueness, just compared with `===` when you call `setPluginVi
 plugin with no `id` still works exactly as before; it just can't be targeted that way, only by
 holding onto its reference and calling `removePlugin` directly.
 
+### Multi-pane indicators
+
+An oscillator like RSI or MACD has a value domain that has nothing to do with price (RSI's
+fixed `[0, 100]`, say) — drawing it as a `ChartPlugin` overlay in the price pane would either
+get swamped by the candles or need a hand-rolled rescale hack. `addPane` reserves a horizontal
+strip below the main price pane with its own independent value axis, and a plugin's `paneId`
+routes its `draw()` there instead of the price pane:
+
+```ts
+chart.addPane({
+  id: 'rsi',
+  heightRatio: 0.25, // share of the total plotting height this pane occupies; defaults to 0.25
+  getValueRange: () => ({ min: 0, max: 100 }), // this pane's own value-axis domain, called every frame
+});
+
+chart.addPlugin({
+  paneId: 'rsi', // routes this plugin into the 'rsi' pane instead of the price pane
+  draw({ ctx, allPoints, visibleStartIndex, visibleEndIndex, xForIndex, yForValue }) {
+    const rsi = computeRsi(allPoints.map((c) => c.close), 14); // your own indicator math — see below
+    ctx.strokeStyle = '#bb86fc';
+    ctx.beginPath();
+    for (let i = visibleStartIndex; i < visibleEndIndex; i++) {
+      const x = xForIndex(i);
+      const y = yForValue(rsi[i]); // mapped against *this pane's* [0, 100], not price
+      i === visibleStartIndex ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  },
+});
+```
+
+The pane itself draws nothing but a separator line and its own right-side axis (ticks resolved
+from `getValueRange()`, styled through the same `axis` options as the price axis) — exactly the
+same "core provides layout, the app provides the math" split plugins already use for indicator
+*overlays*, just for indicators that need their own scale instead of sharing the price one. See
+`demo/index.html` for a complete worked example (an RSI pane built entirely in the demo's own
+code, same as the moving-average overlay above it — see "Indicators" below for why neither
+ships in the library itself).
+
+Every declared pane stacks below the previous one in call order, each shrinking the main
+pane's share of the plotting height; `removePane(id)` gives that space back. A plugin whose
+`paneId` doesn't match any currently-added pane falls back to drawing in the price pane rather
+than silently disappearing — useful if you remove a pane before removing the plugins that
+targeted it. `getPanes()` returns every declared pane's `id`/`heightRatio`, the same
+snapshot-for-building-a-management-UI idea `getPlugins()` already offers for plugins.
+
+The hover crosshair's dashed vertical line spans every pane so a hovered candle lines up
+across the whole stack; the horizontal line, price-label chip, and OHLC legend stay scoped to
+the price pane — an indicator pane's own hover readout, if you want one, is something its own
+plugin draws (it has the same `xForIndex`/`yForValue` a price-pane plugin does, just mapped
+against that pane's own value domain and pixel rect).
+
 ### Cleanup
 
 Call `chart.destroy()` when you're done with a chart (component unmount, etc.) — it removes a
@@ -469,6 +522,18 @@ two things `draw()` alone can't give it, both added specifically to make that bu
   `ChartRenderer.render` uses, recomputed on demand since pointer events happen between
   frames, not during one.
 
+`ChartPlugin.paneId` is a third, narrower option on top of the two above — it doesn't change
+what a plugin implements, only which pane's `PluginRenderApi` it receives. `ChartRenderer`
+builds one `PluginRenderApi` per pane per frame (`buildPluginApi`, sharing a `FrameGeometry` for
+the parts every pane has in common — the time axis and the frame-ended guard) and routes each
+plugin to the one matching its `paneId`, defaulting to the main pane. A pane-targeted plugin's
+`yForValue`/`valueForY` are pane-local (mapped against that pane's own `getValueRange()`) but
+still return/accept absolute canvas pixels, exactly like the main pane's — so a plugin never
+needs to know whether it's drawing in the price pane or a declared one, only which `paneId` it
+was given. Pointer gestures (`onPointerDown`/etc.) aren't pane-aware yet: they're still offered
+chart-wide the same way regardless of any plugin's `paneId`, matching the mechanism's original
+scope (drawing tools on the price series) rather than a limitation specific to panes.
+
 ### Indicators (moving averages, Bollinger Bands, ...): deliberately not included
 
 wick-charts ships the extension point (`ChartPlugin`, `allPoints`, `xForIndex`/`yForValue`)
@@ -537,8 +602,11 @@ it. Candlestick is the only registered series type so far; the plugin extension 
 overlays plus, now, claimable pointer gestures for interactive tools — see "Plugins" above)
 has no built-in users (see "Indicators" above for why) beyond `demo/index.html`'s example. No
 concrete drawing tool ships yet, only the mechanism a trend line or similar would be built
-on. No multi-pane support yet (volume shares the candlestick pane rather than getting its
-own). See [CHANGELOG.md](./CHANGELOG.md) for what shipped in each release.
+on. `addPane`/`removePane` let a plugin-drawn indicator (RSI, MACD, ...) reserve its own
+horizontal strip with an independent value axis — see "Multi-pane indicators" above; volume
+still shares the candlestick pane rather than getting its own, since it draws through the
+series itself, not a pane-targeted plugin. See [CHANGELOG.md](./CHANGELOG.md) for what shipped
+in each release.
 
 ## License
 

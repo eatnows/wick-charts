@@ -25,8 +25,9 @@
     Drag: <b>chart area</b> pans/tilts the price range · <b>right price axis</b> scales it vertically ·
     scroll (vertical): zoom · trackpad swipe / shift+scroll: pan · hover: OHLC info + axis labels ·
     touch: one finger pans, two-finger pinch zooms, hold still to inspect a candle ·
-    amber line: a 20-period moving average — built entirely in this demo's own code via
-    <code>addPlugin</code>, not shipped by the library (see "Indicators" in the README)
+    amber line: a 20-period moving average · bottom strip: a 14-period RSI in its own pane
+    (<code>addPane</code> + a <code>paneId</code>-targeted plugin) — both built entirely in
+    this demo's own code, not shipped by the library (see "Indicators" in the README)
   </div>
   <div id="canvas-holder">
     <canvas id="chart"></canvas>
@@ -77,6 +78,75 @@
         ctx.stroke();
       },
     };
+  }
+
+  // A second worked example, this time of an indicator that needs its own
+  // pane rather than an overlay on the price series (see "Multi-pane
+  // support" in the README): RSI oscillates in a fixed [0, 100] range that
+  // has nothing to do with price, so plotting it in the price pane would
+  // either swamp the candles or need its own rescaled y-axis hack. Wiring
+  // this up is two calls — chart.addPane() below reserves the strip, and
+  // this plugin's `paneId` routes its draw() there instead of the price
+  // pane — the plugin itself is just RSI math plus the same draw-a-line
+  // logic movingAveragePlugin above already uses.
+  function rsiPlugin(period, color, paneId) {
+    return {
+      paneId,
+      draw({ ctx, allPoints, visibleStartIndex, visibleEndIndex, xForIndex, yForValue }) {
+        if (allPoints.length === 0) return;
+
+        const closes = allPoints.map((c) => c.close);
+        const rsi = computeRsi(closes, period);
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        let drawing = false;
+        for (let i = visibleStartIndex; i < visibleEndIndex; i++) {
+          if (Number.isNaN(rsi[i])) {
+            drawing = false;
+            continue;
+          }
+          const x = xForIndex(i);
+          const y = yForValue(rsi[i]);
+          if (drawing) ctx.lineTo(x, y);
+          else {
+            ctx.moveTo(x, y);
+            drawing = true;
+          }
+        }
+        ctx.stroke();
+      },
+    };
+  }
+
+  // Wilder's smoothing, the original (and still most common) RSI
+  // formulation — an alternative to a plain rolling average of gains/losses.
+  function computeRsi(closes, period) {
+    const rsi = new Array(closes.length).fill(NaN);
+    let avgGain = 0;
+    let avgLoss = 0;
+
+    for (let i = 1; i < closes.length; i++) {
+      const change = closes[i] - closes[i - 1];
+      const gain = Math.max(0, change);
+      const loss = Math.max(0, -change);
+
+      if (i < period) {
+        avgGain += gain;
+        avgLoss += loss;
+        continue;
+      }
+      if (i === period) {
+        avgGain = (avgGain + gain) / period;
+        avgLoss = (avgLoss + loss) / period;
+      } else {
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+      }
+      rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    }
+    return rsi;
   }
 
   // Deterministic per-index generator (not a running random walk) so any
@@ -154,6 +224,8 @@
   const chart = new WickChart(canvas, { style: { upColor: '#26a69a', downColor: '#ef5350' } });
   chart.setDataLoader(loader, LOAD_THRESHOLD);
   chart.addPlugin(movingAveragePlugin(20, '#f0b90b'));
+  chart.addPane({ id: 'rsi', heightRatio: 0.25, getValueRange: () => ({ min: 0, max: 100 }) });
+  chart.addPlugin(rsiPlugin(14, '#bb86fc', 'rsi'));
   chart.setData(generateRange(INITIAL_MIN, INITIAL_MAX));
   chart.render();
 

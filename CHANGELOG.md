@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-pane support** (`addPane`/`removePane`/`getPanes`, `ChartPlugin.paneId`):
+  an app can now reserve a horizontal strip below the main price pane for an
+  indicator or oscillator with its own independent value axis (RSI's fixed
+  `[0, 100]`, say), and route a `ChartPlugin`'s `draw()` into it by `paneId`.
+  The pane itself draws nothing but a separator line and its own right-side
+  axis — content comes entirely from whatever plugin targets it, the same
+  "core provides layout, the app provides the math" split the plugin system
+  already used for indicator overlays on the price pane. See "Multi-pane
+  indicators" in the README, and `demo/index.html` for a worked RSI-in-its-
+  own-pane example alongside the existing moving-average overlay.
+- The hover crosshair's dashed vertical line now spans every pane in the
+  stack; the horizontal line, price-label chip, and OHLC legend stay scoped
+  to the main pane.
+
 ## [0.3.0] — Initial release
 
 First published version. Everything below shipped together as the initial
