@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Line series** (`createLineChart`, `type: 'line'`): a second registered
+  series type alongside candlestick, for a plain `{ time, value }` time
+  series with no OHLC shape. Proves the `SeriesDefinition`/`registerSeries`
+  extension point genuinely supports more than one series, not just the
+  one it launched with — every engine-level concern (pan/zoom, plugins,
+  panes, on-demand data loading, styling) works identically to a
+  candlestick chart, since none of it was ever specific to `Candle`. A
+  non-finite (`NaN`) `value` is treated as an explicit gap: the line
+  breaks and resumes at the next real value. See "Line charts" in the
+  README.
+
 ## [0.4.0] — 2026-09-13
 
 ### Added

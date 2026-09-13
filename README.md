@@ -17,6 +17,7 @@ npm install wick-charts
   - [Install](#install)
   - [Quick start](#quick-start)
   - [Candle data](#candle-data)
+  - [Line charts](#line-charts)
   - [Styling](#styling)
   - [Reading chart state](#reading-chart-state)
   - [Loading more history on demand](#loading-more-history-on-demand)
@@ -135,6 +136,39 @@ it — a dataset with no `volume` at all renders exactly as if the feature didn'
 `setData()` sorts by time itself, so passing data in any order (or re-calling it with a fresh
 array) is safe. It resets pan/zoom/hover state — call it for a genuinely new dataset, and use
 `setDataLoader()` (below) to extend the current one instead.
+
+### Line charts
+
+For a plain time series with no OHLC shape — an equity curve, a metric over time, anything
+that's just one number per point — `createLineChart` is the line-series equivalent of
+`createCandlestickChart` above. A line point is `{ time, value }`:
+
+```ts
+import { createLineChart } from 'wick-charts';
+
+const chart = createLineChart(canvas, {
+  style: { lineColor: '#2196f3', lineWidth: 1.5 }, // both shown here are the defaults
+});
+
+chart.setData([
+  { time: '2024-01-01T00:00:00Z', value: 100 },
+  { time: '2024-01-02T00:00:00Z', value: 103.4 },
+  { time: '2024-01-03T00:00:00Z', value: 101.8 },
+  // ...
+]);
+
+chart.render();
+```
+
+Everything else — pan/zoom/hover, `setDataLoader`, `addPlugin`, `addPane`, `background`/
+`font`/`axis`/`crosshair`/`legend` styling — works exactly as it does for a candlestick chart,
+since none of it is specific to what's actually plotted (see "Series types" under
+Architecture). `value` accepts `NaN` (or any non-finite number) as an explicit gap: the line
+breaks there and resumes at the next real value, rather than plotting a bogus point or
+throwing — useful for a series with missing data at some points without pre-filtering it
+yourself. The hover legend shows `Value <number>` (or `Value —` for a hovered gap) in place of
+candlestick's OHLC breakdown; `new WickChart(canvas, { type: 'line' })` also works, the same
+untyped escape hatch `type: 'candlestick'` has, if you'd rather not import the factory.
 
 ### Styling
 
@@ -455,31 +489,35 @@ for *this* series (a line series wouldn't have a body width or volume bars to co
 
 ### Series types
 
-Candlesticks are the only chart type today, but nothing above `src/series/` knows that.
-`WickChart` and `ChartRenderer` are generic over a point shape (`SeriesPoint` — just a
-`time`) and delegate every type-specific decision — how to compute the value-axis range,
-how to draw the visible points, what a hover legend says — to a
+Candlestick and line are the two chart types today, and nothing above `src/series/` treats
+either specially. `WickChart` and `ChartRenderer` are generic over a point shape
+(`SeriesPoint` — just a `time`) and delegate every type-specific decision — how to compute
+the value-axis range, how to draw the visible points, what a hover legend says — to a
 `SeriesDefinition` (see `src/series/types.ts`) resolved at construction time from
 `options.type` via a small registry (`src/series/registry.ts`). `src/series/candlestick.ts`
-is the reference implementation: it registers itself as `'candlestick'` on import, which is
-why importing `wick-charts` at all is enough to make that type available without the caller
-registering anything.
+and `src/series/line.ts` both register themselves (as `'candlestick'`/`'line'`) on import,
+which is why importing `wick-charts` at all is enough to make either type available without
+the caller registering anything.
 
-Adding a second chart type (line, area, bar, ...) means writing one new file that
-implements `SeriesDefinition<TPoint, TStyle>` and calling `registerSeries` on it — `Viewport`,
-event handling, data loading, and WASM scale dispatch are all untouched, and existing
-`type: 'candlestick'` charts keep working exactly as before. This is the extension point the
-`type` option and `style` option are built around: `style` is whatever shape the chosen
-series's `defaultStyle` declares (candlestick's is `{ upColor, downColor }`), merged over
-that default rather than hardcoded into the chart itself.
+Adding a chart type (area, bar, ...) means writing one new file that implements
+`SeriesDefinition<TPoint, TStyle>` and calling `registerSeries` on it — `Viewport`, event
+handling, data loading, and WASM scale dispatch are all untouched, and every existing chart
+of another type keeps working exactly as before; `src/series/line.ts` is a second, smaller
+worked example of this alongside candlestick's own. This is the extension point the `type`
+option and `style` option are built around: `style` is whatever shape the chosen series's
+`defaultStyle` declares (candlestick's is `{ upColor, downColor, ... }`, line's is `{
+lineColor, lineWidth }`), merged over that default rather than hardcoded into the chart
+itself.
 
 `options.type` is a plain string the registry resolves at runtime, so `new WickChart(canvas,
 { type: 'candlestick', style: {...} })` type-checks even if `style` has nothing to do with
 `CandlestickStyle` — nothing ties a runtime string to a specific `TPoint`/`TStyle` pair at the
-type level. `createCandlestickChart()` (in `src/index.ts`) is the fix for the one built-in
-type: a thin wrapper that pins both generics so its `style` is fully checked. A new series
-should export an equivalent `create<Name>Chart` next to it rather than widening
-`WickChartOptions` itself, so each series's style shape stays independent of every other's.
+type level. `createCandlestickChart()`/`createLineChart()` (both in `src/index.ts`) are the
+fix for the two built-in types: a thin wrapper per series that pins both generics so its
+`style` is fully checked. A new series should export an equivalent `create<Name>Chart` next
+to it rather than widening `WickChartOptions` itself, so each series's style shape stays
+independent of every other's — line's factory is the second proof this pattern holds up, not
+just a one-off written for candlestick.
 
 ### Plugins (markers, annotations, drawing tools)
 
@@ -598,7 +636,8 @@ hover state — and on-demand history loading via `setDataLoader`. Per-candle vo
 the bottom fifth of the chart when a candle has `volume`, and are entirely omitted (nothing
 drawn, nothing reserved) for data that doesn't.
 Coordinate scaling runs on WASM once a frame's point count crosses the threshold, JS below
-it. Candlestick is the only registered series type so far; the plugin extension point (draw
+it. Candlestick and line are the two registered series types so far (`createCandlestickChart`/
+`createLineChart`); the plugin extension point (draw
 overlays plus, now, claimable pointer gestures for interactive tools — see "Plugins" above)
 has no built-in users (see "Indicators" above for why) beyond `demo/index.html`'s example. No
 concrete drawing tool ships yet, only the mechanism a trend line or similar would be built

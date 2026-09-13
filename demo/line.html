@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>wick-charts line series demo</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif}
+  .wrap{display:flex;flex-direction:column;height:100%}
+  header{padding:14px 18px;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:16px;flex-shrink:0}
+  header h1{font-size:14px;margin:0;font-weight:600}
+  header p{font-size:12px;margin:0;color:#8b949e}
+  .hint{font-size:11.5px;color:#8b949e;padding:8px 18px;border-bottom:1px solid #21262d;flex-shrink:0}
+  .hint b{color:#c9d1d9}
+  #canvas-holder{flex:1;min-height:0;position:relative}
+  canvas{width:100%;height:100%;display:block;cursor:crosshair}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>wick-charts — line series</h1>
+    <p>The second registered series type (createLineChart), same engine as the candlestick demo</p>
+  </header>
+  <div class="hint">
+    Same interaction model as the candlestick demo (see <code>index.html</code>): drag to pan,
+    scroll to zoom, drag the price axis to scale, hover for the <code>Value</code> legend — the
+    <b>gap</b> around the middle of the series is a deliberate <code>NaN</code> value, showing
+    the line break instead of connecting across it.
+  </div>
+  <div id="canvas-holder">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script type="module">
+  import { createLineChart } from '../dist/index.js';
+
+  const DAY_MS = 86400000;
+  const EPOCH = new Date('2024-01-01T00:00:00Z').getTime();
+  const POINT_COUNT = 300;
+  const GAP_INDEX = Math.floor(POINT_COUNT / 2); // demonstrates NaN-as-gap handling
+
+  function seededRandom(seed) {
+    let s = seed >>> 0;
+    return () => {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+      return s / 0xffffffff;
+    };
+  }
+
+  function generateData() {
+    const rand = seededRandom(42);
+    const points = [];
+    let value = 100;
+    for (let i = 0; i < POINT_COUNT; i++) {
+      value += (rand() - 0.5) * 4;
+      points.push({
+        time: new Date(EPOCH + i * DAY_MS).toISOString(),
+        value: i === GAP_INDEX ? NaN : value,
+      });
+    }
+    return points;
+  }
+
+  const canvas = document.getElementById('chart');
+  const holder = document.getElementById('canvas-holder');
+
+  function resizeCanvas() {
+    const rect = holder.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+  }
+
+  resizeCanvas();
+  const chart = createLineChart(canvas, { style: { lineColor: '#2196f3', lineWidth: 1.5 } });
+  chart.setData(generateData());
+  chart.render();
+
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+    chart.render();
+  });
+</script>
+</body>
+</html>
