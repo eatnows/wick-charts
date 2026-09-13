@@ -1,14 +1,17 @@
 import { formatAxisLabel, formatHoverTime, pickTickIndices } from './axis.js';
 import { createScale } from './hybridScale.js';
+import { computePaneLayout } from './paneLayout.js';
 import { formatPrice, niceTicks } from './priceAxis.js';
 import type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
 import type { Scale } from './hybridScale.js';
+import type { PaneRect } from './paneLayout.js';
 import type { SeriesDefinition } from './series/types.js';
 import type {
   ChartAxisOptions,
   ChartCrosshairOptions,
   ChartFontOptions,
   ChartLegendOptions,
+  ResolvedPaneOptions,
   WickChartOptions,
   SeriesPoint,
 } from './types.js';
@@ -62,6 +65,31 @@ export interface RenderInput<TPoint extends SeriesPoint> {
    * position rather than any property of the hovered point itself. */
   hoverY: number | null;
   plugins: ChartPlugin<TPoint>[];
+  /** Indicator/oscillator panes declared via `WickChart.addPane`, resolved
+   * (defaults applied) — see `ResolvedPaneOptions`. Empty by default, in
+   * which case the main pane alone fills the whole plotting height exactly
+   * as it did before panes existed. */
+  panes: ResolvedPaneOptions[];
+}
+
+/**
+ * Everything a per-pane `PluginRenderApi` needs *besides* that one pane's
+ * own rect/value-domain/scale — the parts every pane shares for a given
+ * frame, since there is only one time axis (and one frame-ended flag) for
+ * the whole stack. Bundled so `buildPluginApi` takes one argument for all
+ * of this instead of six repeated at each of its call sites (one per pane).
+ */
+interface FrameGeometry<TPoint extends SeriesPoint> {
+  chartWidth: number;
+  xForIndex: (globalIndex: number) => number;
+  indexForX: (x: number) => number;
+  visibleStartIndex: number;
+  visibleEndIndex: number;
+  allPoints: readonly TPoint[];
+  /** Flipped in `render()`'s `finally`, after which every pane's
+   * `yForValue` throws instead of touching a freed WASM scale — see the
+   * interface-level warning on `PluginRenderApi`. */
+  frameState: { ended: boolean };
 }
 
 /**
@@ -130,11 +158,16 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
 
   render(input: RenderInput<TPoint>): void {
     const { ctx, canvas, background, seriesDefinition, style } = this;
-    const { sorted, times, viewport, hoverIndex, hoverY, plugins } = input;
+    const { sorted, times, viewport, hoverIndex, hoverY, plugins, panes } = input;
     const width = canvas.width;
     const height = canvas.height;
     const chartWidth = this.chartWidth;
-    const chartHeight = this.chartHeight;
+    // Full stack height: the main price pane plus every declared indicator
+    // pane below it. `this.chartHeight` predates panes and named what's
+    // now only true with zero of them — kept as the property name (public
+    // API reads it through) but renamed locally here since most of this
+    // method cares about one pane's height, not the stack's.
+    const stackHeight = this.chartHeight;
 
     ctx.clearRect(0, 0, width, height);
     if (background !== 'transparent') {
@@ -142,7 +175,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       ctx.fillRect(0, 0, width, height);
     }
 
-    if (sorted.length === 0 || chartWidth <= 0 || chartHeight <= 0) return;
+    if (sorted.length === 0 || chartWidth <= 0 || stackHeight <= 0) return;
+
+    const { main: mainRect, panes: paneRects } = computePaneLayout(panes, stackHeight);
+    const chartHeight = mainRect.height;
 
     const startIdx = Math.max(0, Math.floor(viewport.startIndex));
     const endIdx = Math.min(sorted.length, Math.ceil(viewport.endIndex));
@@ -165,20 +201,38 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       visible.length,
     );
 
-    // Flipped in `finally`, right before `disposeYScale()` frees the WASM
-    // scale's backing memory (a no-op on the JS path). Guards `yForValue`
-    // below so a plugin that stashes it and calls it later gets a clear
-    // thrown error instead of touching freed WASM memory — see the
-    // interface-level warning on `PluginRenderApi`.
-    let frameEnded = false;
+    // Every indicator pane gets the exact same treatment as the main pane
+    // — its own value domain (from `PaneOptions.getValueRange`) and its
+    // own JS/WASM scale over its own pixel height — kept alive for the
+    // whole frame alongside `yScale`, since plugins targeting a pane draw
+    // only after every pane's axis has already been rendered.
+    const paneScales = paneRects.map((rect, i) => {
+      const pane = panes[i]!;
+      const { min, max } = pane.getValueRange();
+      const { scale, dispose } = createScale(min, max, rect.height, 0, visible.length);
+      return { pane, rect, min, max, scale, dispose };
+    });
+
+    // Flipped in `finally`, right before every scale above frees its WASM
+    // backing memory (a no-op on the JS path). Guards `yForValue` below so
+    // a plugin that stashes it and calls it later gets a clear thrown
+    // error instead of touching freed memory — see the interface-level
+    // warning on `PluginRenderApi`. An object (not a plain `let`) so every
+    // pane's plugin-api closure, built by `buildPluginApi` below, shares
+    // the same flag instead of each capturing its own.
+    const frameState = { ended: false };
 
     try {
       const slotWidth = chartWidth / viewport.visibleCount;
 
       // x position for a *global* sorted-array index — honors the (possibly
       // fractional) viewport.startIndex so panning is pixel-smooth, not
-      // stepped a whole point at a time.
+      // stepped a whole point at a time. Shared by every pane: there is
+      // only one time axis for the whole stack.
       const xForIndex = (globalIndex: number) => (globalIndex - viewport.startIndex) * slotWidth + slotWidth / 2;
+      // Exact inverse of xForIndex above — solving
+      // `x = (index - viewport.startIndex) * slotWidth + slotWidth / 2` for `index`.
+      const indexForX = (x: number) => viewport.startIndex + (x - slotWidth / 2) / slotWidth;
 
       seriesDefinition.draw(
         { ctx, visible, startIndex: startIdx, xForIndex, slotWidth, yScale, chartHeight },
@@ -186,10 +240,19 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       );
 
       const priceStep = this.currentPriceStep(valueMin, valueMax);
-      this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight);
-      this.renderTimeAxis(times, startIdx, visible.length, chartHeight, chartWidth, xForIndex);
+      this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, 0);
+      for (const { rect, min, max, scale } of paneScales) {
+        this.renderPaneSeparator(rect.top, chartWidth);
+        const step = this.currentPriceStep(min, max);
+        this.renderPriceAxis(min, max, step, scale, chartWidth, rect.height, rect.top);
+      }
+      this.renderTimeAxis(times, startIdx, visible.length, stackHeight, chartWidth, xForIndex);
 
       if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
+        // The dashed vertical line spans the whole stack (every pane); the
+        // horizontal line, price-label chip, and OHLC legend stay scoped
+        // to the main pane only — an indicator pane's own hover readout,
+        // if it wants one, is the job of whatever plugin draws into it.
         this.renderCrosshairAndLegend(
           sorted[hoverIndex]!,
           xForIndex(hoverIndex),
@@ -200,36 +263,38 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           priceStep,
           chartWidth,
           chartHeight,
+          stackHeight,
         );
       }
 
       if (plugins.length > 0) {
-        const api: PluginRenderApi<TPoint> = {
-          ctx,
+        // Everything every pane's PluginRenderApi shares — only the pane's
+        // own rect/value-domain/scale differ between `buildPluginApi`
+        // calls, so bundling the rest here keeps that call to a handful of
+        // pane-specific arguments instead of ten positional ones repeated
+        // per pane.
+        const frameGeometry: FrameGeometry<TPoint> = {
           chartWidth,
-          chartHeight,
           xForIndex,
-          yForValue: (value) => {
-            if (frameEnded) {
-              throw new Error(
-                'wick-charts: PluginRenderApi.yForValue called after its frame ended — ' +
-                  'only call it synchronously inside ChartPlugin.draw()',
-              );
-            }
-            return yScale.map(value);
-          },
-          // Exact inverse of xForIndex above — solving
-          // `x = (index - viewport.startIndex) * slotWidth + slotWidth / 2` for `index`.
-          indexForX: (x) => viewport.startIndex + (x - slotWidth / 2) / slotWidth,
-          // Exact inverse of the value->y mapping createScale set up for this
-          // frame (domain [valueMin, valueMax] -> range [chartHeight, 0]).
-          valueForY: (y) => valueMin + (1 - y / chartHeight) * (valueMax - valueMin),
+          indexForX,
           visibleStartIndex: startIdx,
           visibleEndIndex: endIdx,
           allPoints: sorted,
+          frameState,
         };
+        const mainApi = this.buildPluginApi(mainRect, valueMin, valueMax, yScale, frameGeometry);
+        const paneApiById = new Map<string, PluginRenderApi<TPoint>>();
+        for (const { pane, rect, min, max, scale } of paneScales) {
+          paneApiById.set(pane.id, this.buildPluginApi(rect, min, max, scale, frameGeometry));
+        }
+
         for (const plugin of plugins) {
           if (plugin.visible === false) continue;
+          // A paneId with no matching pane (e.g. the pane it targeted was
+          // since removed) falls back to the main pane rather than being
+          // silently skipped — see the doc comment on `ChartPlugin.paneId`.
+          const api =
+            plugin.paneId && plugin.paneId !== 'main' ? (paneApiById.get(plugin.paneId) ?? mainApi) : mainApi;
           // save/restore isolates each plugin's canvas state (strokeStyle,
           // lineDash, ...) from the next one — a plugin that forgets to
           // clean up after itself can't bleed style into whatever draws
@@ -246,9 +311,52 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
         }
       }
     } finally {
-      frameEnded = true;
+      frameState.ended = true;
       disposeYScale();
+      for (const { dispose } of paneScales) dispose();
     }
+  }
+
+  /**
+   * Builds the `PluginRenderApi` for one pane — the main price pane or a
+   * declared indicator pane, identical shape either way — from that pane's
+   * own rect/value-domain/scale plus whatever `geometry` every pane shares
+   * for this frame (shared because there is only one time axis, and one
+   * frame-ended flag, for the whole stack; see `FrameGeometry`).
+   */
+  private buildPluginApi(
+    rect: PaneRect,
+    valueMin: number,
+    valueMax: number,
+    scale: Scale,
+    geometry: FrameGeometry<TPoint>,
+  ): PluginRenderApi<TPoint> {
+    const { chartWidth, xForIndex, indexForX, visibleStartIndex, visibleEndIndex, allPoints, frameState } = geometry;
+    return {
+      ctx: this.ctx,
+      chartWidth,
+      chartHeight: rect.height,
+      xForIndex,
+      yForValue: (value) => {
+        if (frameState.ended) {
+          throw new Error(
+            'wick-charts: PluginRenderApi.yForValue called after its frame ended — ' +
+              'only call it synchronously inside ChartPlugin.draw()',
+          );
+        }
+        // Local pane-space y (scale's range is [rect.height, 0]) shifted
+        // into absolute canvas pixels by the pane's own top offset.
+        return rect.top + scale.map(value);
+      },
+      indexForX,
+      // Exact inverse of the mapping above: subtract the pane's top offset
+      // before inverting the same [valueMin, valueMax] -> [rect.height, 0]
+      // mapping createScale set up for it.
+      valueForY: (y) => valueMin + (1 - (y - rect.top) / rect.height) * (valueMax - valueMin),
+      visibleStartIndex,
+      visibleEndIndex,
+      allPoints,
+    };
   }
 
   /** The decimal precision `formatPrice` should use for the current price
@@ -259,6 +367,14 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     return ticks.length > 1 ? ticks[1]! - ticks[0]! : 0;
   }
 
+  /**
+   * Draws one pane's right-side value axis: boundary line, horizontal grid
+   * lines, and tick labels. Used for both the main price pane and every
+   * indicator pane — `topOffset` shifts everything down by that pane's own
+   * position in the stack (0 for the main pane, which sits at the top), so
+   * `yScale` only ever has to know about its own pane-local [0, chartHeight]
+   * range and never about where that pane lives in the full canvas.
+   */
   private renderPriceAxis(
     priceMin: number,
     priceMax: number,
@@ -266,14 +382,15 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     yScale: Scale,
     chartWidth: number,
     chartHeight: number,
+    topOffset: number,
   ): void {
     const { ctx, axis } = this;
     const ticks = niceTicks(priceMin, priceMax, axis.priceTickCount);
 
     ctx.strokeStyle = axis.lineColor;
     ctx.beginPath();
-    ctx.moveTo(chartWidth + 0.5, 0);
-    ctx.lineTo(chartWidth + 0.5, chartHeight);
+    ctx.moveTo(chartWidth + 0.5, topOffset);
+    ctx.lineTo(chartWidth + 0.5, topOffset + chartHeight);
     ctx.stroke();
 
     ctx.font = this.axisFont();
@@ -281,8 +398,9 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     ctx.textBaseline = 'middle';
 
     for (const value of ticks) {
-      const y = yScale.map(value);
-      if (y < 0 || y > chartHeight) continue;
+      const localY = yScale.map(value);
+      if (localY < 0 || localY > chartHeight) continue;
+      const y = topOffset + localY;
 
       ctx.strokeStyle = axis.gridLineColor;
       ctx.beginPath();
@@ -293,6 +411,19 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       ctx.fillStyle = axis.textColor;
       ctx.fillText(formatPrice(value, step), chartWidth + 6, y);
     }
+  }
+
+  /** The horizontal rule separating an indicator pane from whatever sits
+   * above it (the main pane, or the previous indicator pane) — the same
+   * `axis.lineColor` boundary style `renderTimeAxis` already draws between
+   * the plotting area and the time-axis strip. */
+  private renderPaneSeparator(top: number, chartWidth: number): void {
+    const { ctx, axis } = this;
+    ctx.strokeStyle = axis.lineColor;
+    ctx.beginPath();
+    ctx.moveTo(0, top + 0.5);
+    ctx.lineTo(chartWidth, top + 0.5);
+    ctx.stroke();
   }
 
   private renderTimeAxis(
@@ -335,6 +466,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     priceStep: number,
     chartWidth: number,
     chartHeight: number,
+    stackHeight: number,
   ): void {
     const { ctx, canvas, seriesDefinition, style, crosshair } = this;
 
@@ -342,9 +474,13 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     ctx.strokeStyle = crosshair.lineColor;
     ctx.setLineDash([4, 4]);
 
+    // Spans the whole pane stack (not just the main pane's own
+    // chartHeight) so hovering a candle lines up with the same column
+    // across every indicator pane below it — see the call site's comment
+    // in `render()` for why the horizontal line/legend don't follow suit.
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, chartHeight);
+    ctx.lineTo(x, stackHeight);
     ctx.stroke();
 
     // The horizontal line follows the actual cursor/finger position, not

@@ -9,9 +9,18 @@ import { importRealWasm } from './wasmImporter.js';
 import type { ChartPlugin, ChartPointerEvent } from './plugins/types.js';
 import type { CandlestickStyle } from './series/candlestick.js';
 import type { SeriesDefinition } from './series/types.js';
-import type { Candle, WickChartOptions, SeriesPoint, ValueRange } from './types.js';
+import type { Candle, PaneOptions, ResolvedPaneOptions, WickChartOptions, SeriesPoint, ValueRange } from './types.js';
 
-export type { BusinessDay, Candle, WickChartOptions, WickTime, SeriesPoint, UnixMillis, ValueRange } from './types.js';
+export type {
+  BusinessDay,
+  Candle,
+  PaneOptions,
+  WickChartOptions,
+  WickTime,
+  SeriesPoint,
+  UnixMillis,
+  ValueRange,
+} from './types.js';
 export type { DataLoader, DataRequest } from './dataSource.js';
 export type { ChartPlugin, ChartPointerEvent, PluginRenderApi } from './plugins/types.js';
 export { distanceToSegment, hitTestPoint, hitTestSegment } from './hitTest.js';
@@ -43,6 +52,16 @@ const DEFAULT_VISIBLE_POINTS = 120;
 /** How close (in points) the visible window has to get to either edge of
  * the loaded data before `setDataLoader`'s loader is asked for more. */
 const DEFAULT_LOAD_THRESHOLD = 20;
+
+/** `PaneOptions.heightRatio`'s default — see `addPane`. */
+const DEFAULT_PANE_HEIGHT_RATIO = 0.25;
+
+/** `PaneOptions.getValueRange`'s default — see `addPane`. Fixed at
+ * `[0, 1]` rather than auto-fitting to anything, since the pane has no
+ * data of its own to fit to: only a plugin drawing into it knows what
+ * range makes sense, which is exactly why `getValueRange` exists to be
+ * overridden. */
+const DEFAULT_PANE_VALUE_RANGE: ValueRange = { min: 0, max: 1 };
 
 /** How long a single finger has to stay down before a still-in-progress
  * 'pan' touch switches to 'scrub' mode (touch has no hover, so this is its
@@ -78,6 +97,11 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
    * motionless while the pointer moves within that candle's column). */
   private hoverY: number | null = null;
   private plugins: ChartPlugin<TPoint>[] = [];
+  /** Indicator/oscillator panes declared via `addPane`, defaults already
+   * resolved — see `ResolvedPaneOptions`. Empty until an app adds one; a
+   * chart that never calls `addPane` renders exactly as it did before
+   * panes existed (single price pane filling the whole plotting height). */
+  private panes: ResolvedPaneOptions[] = [];
   /** The plugin whose `onPointerDown` returned `true` for the pointer
    * currently down, or `null` when no plugin has claimed the current
    * gesture (the common case — the chart handles it itself). */
@@ -186,6 +210,49 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
     return this;
   }
 
+  /**
+   * Reserves a horizontal strip below the main price pane (and below any
+   * previously-added pane — panes stack in call order) for an indicator or
+   * oscillator, drawn entirely by `ChartPlugin`s registered with a
+   * matching `paneId` (see `ChartPlugin.paneId`). The pane itself computes
+   * nothing: `options.getValueRange` supplies whatever value-axis domain
+   * makes sense for what will be plotted into it (a fixed `[0, 100]` for
+   * RSI, an auto-fit range closed over a MACD series a plugin already
+   * tracks, ...) — the same "core provides layout, the app provides the
+   * math" split `addPlugin` already uses for indicator overlays on the
+   * main pane. A no-op on layout until at least one plugin actually
+   * targets this pane's `id`; an empty pane still reserves its space and
+   * draws its own axis, just with nothing inside it.
+   */
+  addPane(options: PaneOptions): this {
+    this.panes.push({
+      id: options.id,
+      heightRatio: options.heightRatio ?? DEFAULT_PANE_HEIGHT_RATIO,
+      getValueRange: options.getValueRange ?? (() => DEFAULT_PANE_VALUE_RANGE),
+    });
+    this.scheduleRender();
+    return this;
+  }
+
+  /** Removes a previously-added pane by `id` and re-renders. A no-op, not
+   * an error, if nothing matches. Plugins still targeting the removed
+   * pane's `id` via `ChartPlugin.paneId` fall back to drawing in the main
+   * pane rather than being silently dropped — see the doc comment on
+   * `ChartPlugin.paneId`. */
+  removePane(id: string): this {
+    this.panes = this.panes.filter((pane) => pane.id !== id);
+    this.scheduleRender();
+    return this;
+  }
+
+  /** Every currently-declared pane's `id` and resolved `heightRatio`, in
+   * stacking order (top to bottom, main pane excluded since it always
+   * exists and always sits first) — for an app building a management UI
+   * around indicator panes without maintaining its own parallel list. */
+  getPanes(): readonly { id: string; heightRatio: number }[] {
+    return this.panes.map(({ id, heightRatio }) => ({ id, heightRatio }));
+  }
+
   render(): void {
     this.renderer.render({
       sorted: this.sorted,
@@ -194,6 +261,7 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
       hoverIndex: this.hoverIndex,
       hoverY: this.hoverY,
       plugins: this.plugins,
+      panes: this.panes,
     });
     this.maybeLoadMore();
   }

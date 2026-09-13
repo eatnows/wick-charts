@@ -776,6 +776,80 @@ describe('WickChart', () => {
     });
   });
 
+  describe('panes', () => {
+    it('shrinks the main pane and routes a paneId-targeted plugin into the declared pane', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(10));
+
+      let mainChartHeight = 0;
+      let paneChartHeight = 0;
+      chart.addPlugin({ draw: (api) => (mainChartHeight = api.chartHeight) });
+      chart.addPane({ id: 'rsi', heightRatio: 0.25, getValueRange: () => ({ min: 0, max: 100 }) });
+      chart.addPlugin({ paneId: 'rsi', draw: (api) => (paneChartHeight = api.chartHeight) });
+
+      chart.render();
+
+      expect(paneChartHeight).toBeGreaterThan(0);
+      expect(paneChartHeight).toBeLessThan(mainChartHeight);
+    });
+
+    it('defaults heightRatio and getValueRange when omitted', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(10));
+
+      chart.addPane({ id: 'oscillator' });
+      expect(chart.getPanes()).toEqual([{ id: 'oscillator', heightRatio: 0.25 }]);
+
+      let seenValue: number | null = null;
+      chart.addPlugin({
+        paneId: 'oscillator',
+        draw: (api) => {
+          seenValue = api.valueForY(api.yForValue(0.5));
+        },
+      });
+      chart.render();
+      expect(seenValue).toBeCloseTo(0.5, 5); // default domain is [0, 1]
+    });
+
+    it('removePane stops reserving space and falls its plugins back to the main pane', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(10));
+      chart.addPane({ id: 'rsi', heightRatio: 0.25 });
+
+      let seenChartHeight = 0;
+      chart.addPlugin({ draw: (api) => (seenChartHeight = api.chartHeight) });
+      chart.render();
+      const chartHeightWithPane = seenChartHeight;
+
+      chart.removePane('rsi');
+      chart.render();
+      const chartHeightAfterRemoval = seenChartHeight;
+
+      expect(chartHeightAfterRemoval).toBeGreaterThan(chartHeightWithPane);
+      expect(chart.getPanes()).toEqual([]);
+    });
+
+    it('removePane is a no-op when no pane matches the id', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(10));
+      chart.addPane({ id: 'rsi' });
+
+      expect(() => chart.removePane('does-not-exist')).not.toThrow();
+      expect(chart.getPanes()).toEqual([{ id: 'rsi', heightRatio: 0.25 }]);
+    });
+
+    it('getPanes returns panes in declaration order', () => {
+      const chart = new WickChart(canvas);
+      chart.addPane({ id: 'volume', heightRatio: 0.15 });
+      chart.addPane({ id: 'rsi', heightRatio: 0.2 });
+
+      expect(chart.getPanes()).toEqual([
+        { id: 'volume', heightRatio: 0.15 },
+        { id: 'rsi', heightRatio: 0.2 },
+      ]);
+    });
+  });
+
   describe('plugin pointer gestures (interactive plugins: drawing tools, etc.)', () => {
     it('lets a plugin claim a mousedown and suppresses the chart\'s own panning for that gesture', () => {
       const chart = new WickChart(canvas);

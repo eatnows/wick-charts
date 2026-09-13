@@ -43,7 +43,7 @@ describe('ChartRenderer (candlestick)', () => {
   it('clears the canvas and draws nothing else for an empty series', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
     const viewport = new Viewport(0);
-    renderer.render({ sorted: [], times: [], viewport, hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: [], times: [], viewport, hoverIndex: null, hoverY: null, plugins: [], panes: [] });
 
     expect(ctx.clearRect).toHaveBeenCalledWith(0, 0, 800, 400);
     expect(ctx.fillRect).not.toHaveBeenCalled();
@@ -52,14 +52,14 @@ describe('ChartRenderer (candlestick)', () => {
 
   it('fills the background when a non-transparent color is configured', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries, { background: '#111111' });
-    renderer.render({ sorted: [], times: [], viewport: new Viewport(0), hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: [], times: [], viewport: new Viewport(0), hoverIndex: null, hoverY: null, plugins: [], panes: [] });
     expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 800, 400);
   });
 
   it('draws one wick (stroke) and one body (fillRect) per visible candle', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
     const viewport = new Viewport(SAMPLE.length);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, hoverY: null, plugins: [], panes: [] });
 
     expect(ctx.stroke.mock.calls.length).toBeGreaterThanOrEqual(SAMPLE.length);
     // one body fillRect per candle, plus zero or more axis fills (background is transparent here)
@@ -70,7 +70,7 @@ describe('ChartRenderer (candlestick)', () => {
   it('does not draw candles when the chart area has no usable width', () => {
     const { canvas: tiny, ctx: tinyCtx } = createTestCanvas(10, 400); // narrower than the 64px price axis
     const renderer = new ChartRenderer(tiny, candlestickSeries);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [], panes: [] });
     expect(tinyCtx.fillRect).not.toHaveBeenCalled();
   });
 
@@ -78,11 +78,11 @@ describe('ChartRenderer (candlestick)', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
     const viewport = new Viewport(SAMPLE.length);
 
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: null, hoverY: null, plugins: [], panes: [] });
     const fillTextCallsWithoutHover = ctx.fillText.mock.calls.length;
     ctx.fillText.mockClear();
 
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [], panes: [] });
     const fillTextCallsWithHover = ctx.fillText.mock.calls.length;
 
     // hovering adds exactly six more fillText calls versus the no-hover render:
@@ -104,6 +104,7 @@ describe('ChartRenderer (candlestick)', () => {
       hoverIndex: 0,
       hoverY: 50,
       plugins: [],
+      panes: [],
     });
     const [legendText] = ctx.fillText.mock.calls[ctx.fillText.mock.calls.length - 1] as [string];
     expect(legendText).toContain('Vol');
@@ -111,7 +112,7 @@ describe('ChartRenderer (candlestick)', () => {
 
   it('renders price-axis tick labels', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [], panes: [] });
     // price ticks are formatted with toLocaleString-free comma grouping via formatPrice;
     // just assert at least one fillText call looks like a plain number label.
     const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
@@ -120,7 +121,7 @@ describe('ChartRenderer (candlestick)', () => {
 
   it('renders time-axis tick labels', () => {
     const renderer = new ChartRenderer(canvas, candlestickSeries);
-    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [] });
+    renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: null, hoverY: null, plugins: [], panes: [] });
     const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
     // formatAxisLabel produces HH:mm / MM-DD / YYYY-MM shaped strings for this tiny time span
     expect(texts.some((t) => /^\d{2}:\d{2}$/.test(t) || /^\d{2}-\d{2}$/.test(t) || /^\d{4}-\d{2}$/.test(t))).toBe(
@@ -131,7 +132,7 @@ describe('ChartRenderer (candlestick)', () => {
   describe('crosshair axis labels', () => {
     it('draws a price-axis label chip at the hovered pixel row, and a time-axis label chip at the hovered time', () => {
       const renderer = new ChartRenderer(canvas, candlestickSeries);
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: 100, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: 100, plugins: [], panes: [] });
 
       const texts = ctx.fillText.mock.calls.map((call) => call[0] as string);
       // formatHoverTime always renders a full "YYYY-MM-DD HH:mm" label
@@ -145,11 +146,11 @@ describe('ChartRenderer (candlestick)', () => {
       const renderer = new ChartRenderer(canvas, candlestickSeries);
       const viewport = new Viewport(SAMPLE.length);
 
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 20, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 20, plugins: [], panes: [] });
       // the price label chip's fillText is drawn at exactly (chartWidth + padding, hoverY)
       const priceLabelNearTop = ctx.fillText.mock.calls.find((call) => call[2] === 20)?.[0] as string | undefined;
 
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 300, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 300, plugins: [], panes: [] });
       const priceLabelNearBottom = ctx.fillText.mock.calls.find((call) => call[2] === 300)?.[0] as
         | string
         | undefined;
@@ -163,7 +164,7 @@ describe('ChartRenderer (candlestick)', () => {
 
     it('omits the horizontal line and price label when there is no hovered pixel row', () => {
       const renderer = new ChartRenderer(canvas, candlestickSeries);
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: null, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport: new Viewport(SAMPLE.length), hoverIndex: 1, hoverY: null, plugins: [], panes: [] });
 
       // with no price line, only the time label chip's and the legend
       // tooltip's background rects are added on top of the candle bodies
@@ -184,6 +185,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 0, // near the left edge, where the chip would otherwise overflow past x=0
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
 
       // the time-axis chip is the fillRect call in the bottom (time-axis) strip
@@ -219,6 +221,7 @@ describe('ChartRenderer (candlestick)', () => {
             },
           },
         ],
+        panes: [],
       });
 
       expect(drawCalled).toBe(true);
@@ -242,6 +245,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: null,
         hoverY: null,
         plugins: [],
+        panes: [],
       });
       // the axis font is the last one set on a no-hover render (see renderTimeAxis)
       expect(ctx.font).toBe('14px monospace');
@@ -256,6 +260,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
       // the legend font is the last one set once a hover legend draws
       expect(ctx.font).toBe('16px monospace');
@@ -272,6 +277,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: null,
         hoverY: null,
         plugins: [],
+        panes: [],
       });
       // the time axis's boundary-line stroke and tick fillStyle are the last ones set
       expect(ctx.strokeStyle).toBe('#111111');
@@ -289,6 +295,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
 
       expect(ctx.strokeStyle).toBe('#333333'); // last stroke color set is the crosshair's
@@ -311,6 +318,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
 
       // the time-axis label chip's background rect (found by its y === chartHeight,
@@ -334,6 +342,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
       expect(ctx.fillStyle).toBe('#666666'); // the legend's fillStyle is the last one set
     });
@@ -345,7 +354,7 @@ describe('ChartRenderer (candlestick)', () => {
       // the tooltip is drawn last in each render pass — nothing else paints a
       // fillRect after it (see renderCrosshairAndLegend's draw order), so the
       // last call recorded right after each render() is its tooltip box
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 100, plugins: [], panes: [] });
       const boxNearTop = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
         number,
         number,
@@ -353,7 +362,7 @@ describe('ChartRenderer (candlestick)', () => {
         number,
       ];
 
-      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 300, plugins: [] });
+      renderer.render({ sorted: SAMPLE, times: TIMES, viewport, hoverIndex: 1, hoverY: 300, plugins: [], panes: [] });
       const boxNearBottom = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
         number,
         number,
@@ -377,6 +386,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 0,
         hoverY: 2,
         plugins: [],
+        panes: [],
       });
 
       // the tooltip is drawn last in the render pass — nothing else paints a
@@ -402,6 +412,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
 
       // the tooltip is drawn last in the render pass — nothing else paints a
@@ -425,6 +436,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
       const defaultBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
         number,
@@ -441,6 +453,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: 1,
         hoverY: 100,
         plugins: [],
+        panes: [],
       });
       const wideGapBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
         number,
@@ -467,6 +480,7 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: null,
         hoverY: null,
         plugins: [],
+        panes: [],
       });
       const fewCallCount = ctx.fillText.mock.calls.length;
 
@@ -481,10 +495,147 @@ describe('ChartRenderer (candlestick)', () => {
         hoverIndex: null,
         hoverY: null,
         plugins: [],
+        panes: [],
       });
       const manyCallCount = ctx.fillText.mock.calls.length;
 
       expect(manyCallCount).toBeGreaterThan(fewCallCount);
+    });
+  });
+
+  describe('multi-pane support', () => {
+    it('shrinks the main pane to make room for a declared pane, and offers plugins its actual height', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      const fullChartHeight = renderer.chartHeight;
+      let mainApiChartHeight: number | null = null;
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [{ draw: (api) => (mainApiChartHeight = api.chartHeight) }],
+        panes: [{ id: 'rsi', heightRatio: 0.25, getValueRange: () => ({ min: 0, max: 100 }) }],
+      });
+
+      // A quarter of the plotting height went to the declared pane, so the
+      // main pane (and the api a main-targeted plugin receives) should
+      // reflect the other three quarters, not the full chartHeight.
+      expect(mainApiChartHeight).toBeCloseTo(fullChartHeight * 0.75, 5);
+      expect(mainApiChartHeight).toBeLessThan(fullChartHeight);
+    });
+
+    it('routes a paneId-targeted plugin to its own pane, with pane-local coordinates', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      const fullChartHeight = renderer.chartHeight;
+      let paneApiChartHeight: number | null = null;
+      let yForValue50: number | null = null;
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [
+          {
+            paneId: 'rsi',
+            draw: (api) => {
+              paneApiChartHeight = api.chartHeight;
+              yForValue50 = api.yForValue(50);
+            },
+          },
+        ],
+        panes: [{ id: 'rsi', heightRatio: 0.25, getValueRange: () => ({ min: 0, max: 100 }) }],
+      });
+
+      // The pane's own height (a quarter of the stack), not the main
+      // pane's — and its pixel geometry sits below the main pane entirely.
+      expect(paneApiChartHeight).toBeCloseTo(fullChartHeight * 0.25, 5);
+      const mainPaneHeight = fullChartHeight * 0.75;
+      expect(yForValue50).toBeGreaterThanOrEqual(mainPaneHeight);
+      expect(yForValue50).toBeLessThanOrEqual(fullChartHeight);
+    });
+
+    it('gives a pane-targeted plugin yForValue/valueForY that exactly invert each other', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      let inverted: number | null = null;
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [
+          {
+            paneId: 'rsi',
+            draw: (api) => {
+              const y = api.yForValue(72);
+              inverted = api.valueForY(y);
+            },
+          },
+        ],
+        panes: [{ id: 'rsi', heightRatio: 0.25, getValueRange: () => ({ min: 0, max: 100 }) }],
+      });
+
+      expect(inverted).toBeCloseTo(72, 5);
+    });
+
+    it('falls back to the main pane for a paneId with no matching declared pane', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      let sawMainChartHeight: number | null = null;
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [{ paneId: 'nonexistent', draw: (api) => (sawMainChartHeight = api.chartHeight) }],
+        panes: [],
+      });
+
+      expect(sawMainChartHeight).toBe(renderer.chartHeight);
+    });
+
+    it('draws a separator line for each declared pane', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      ctx.moveTo.mockClear();
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+        panes: [{ id: 'rsi', heightRatio: 0.25, getValueRange: () => ({ min: 0, max: 100 }) }],
+      });
+
+      const mainPaneHeight = renderer.chartHeight * 0.75;
+      const separatorDrawn = ctx.moveTo.mock.calls.some(
+        ([x, y]) => x === 0 && Math.abs((y as number) - (mainPaneHeight + 0.5)) < 1e-6,
+      );
+      expect(separatorDrawn).toBe(true);
+    });
+
+    it('renders exactly as before when no panes are declared (backward compatible)', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      let mainApiChartHeight: number | null = null;
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [{ draw: (api) => (mainApiChartHeight = api.chartHeight) }],
+        panes: [],
+      });
+
+      expect(mainApiChartHeight).toBe(renderer.chartHeight);
     });
   });
 });

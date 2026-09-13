@@ -120,6 +120,17 @@ export interface ChartPlugin<TPoint extends SeriesPoint = SeriesPoint> {
    * directly and call `chart.render()`.
    */
   visible?: boolean;
+  /**
+   * Routes this plugin's `draw()` into a specific pane instead of the main
+   * price pane — the id must match one passed to `WickChart.addPane` (see
+   * `PaneOptions.id` in `src/types.ts`). Omitted, or set to `'main'`,
+   * keeps today's behavior: the plugin draws in the main price pane. A
+   * `paneId` that doesn't match any currently-added pane is treated the
+   * same as `'main'` (a plugin never silently stops drawing just because
+   * its pane was removed before it was) — call `removePlugin` yourself if
+   * that's not what you want when a pane goes away.
+   */
+  paneId?: string;
   draw(api: PluginRenderApi<TPoint>): void;
   /**
    * Called on pointer down inside the chart's plotting area (not the

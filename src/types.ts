@@ -126,6 +126,47 @@ export interface ChartLegendOptions {
   cursorGap?: number;
 }
 
+/**
+ * Declares one indicator/oscillator pane — a horizontal strip reserved
+ * below the main price pane, with its own value-axis domain independent of
+ * price (an RSI pane's fixed `[0, 100]`, a MACD pane auto-fit to whatever
+ * it's plotting). The pane itself draws nothing: content comes entirely
+ * from `ChartPlugin`s registered with a matching `paneId` (see
+ * `ChartPlugin.paneId` and `WickChart.addPane`) — the same "core provides
+ * layout, the app provides the math" split the plugin system already uses
+ * for indicator overlays on the main pane.
+ */
+export interface PaneOptions {
+  /** Stable identifier — matched against `ChartPlugin.paneId` to route a
+   * plugin's `draw()` into this pane instead of the main price pane.
+   * Uniqueness is the caller's responsibility; `addPane` doesn't enforce it. */
+  id: string;
+  /** Share of the total plotting height (canvas height minus the
+   * time-axis strip) this pane occupies. Every declared pane is scaled
+   * down proportionally (never one at a time, which would change their
+   * relative sizing) if their combined ratio would leave the main pane
+   * less than a fifth of the stack. Defaults to 0.25. */
+  heightRatio?: number;
+  /**
+   * This pane's own value-axis domain for the current frame, called once
+   * per render. Defaults to a fixed `{ min: 0, max: 1 }` if omitted, which
+   * is almost never meaningful — supply this for any real indicator pane
+   * (e.g. `() => ({ min: 0, max: 100 })` for RSI, or a closure over
+   * whatever series your own plugin is tracking for something auto-fit
+   * like MACD).
+   */
+  getValueRange?: () => ValueRange;
+}
+
+/** `PaneOptions` with every optional field defaulted — what `WickChart`
+ * actually stores and hands to `ChartRenderer`, so the renderer never has
+ * to re-apply `??` defaults on every frame. */
+export interface ResolvedPaneOptions {
+  id: string;
+  heightRatio: number;
+  getValueRange: () => ValueRange;
+}
+
 export interface WickChartOptions {
   /**
    * Which registered series type to render this chart as (see
