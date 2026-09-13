@@ -6,3 +6,5 @@ target
 *.tsbuildinfo
 .DS_Store
 *.log
+.idea
+.vscode
