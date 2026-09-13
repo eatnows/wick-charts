@@ -1,3 +1,4 @@
+import { lowerBound, upperBound } from './binarySearch.js';
 import type { DataLoader } from './dataSource.js';
 import { mergeSeriesPoints } from './mergeSeries.js';
 import { computePaneLayout } from './paneLayout.js';
@@ -87,37 +88,6 @@ const LONG_PRESS_MS = 350;
  * as a real drag, not a hold — cancels the pending long-press timer so a
  * fast pan gesture never flips into scrub mid-motion. */
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
-
-/** First index in `times` (ascending) whose value is `>= target`, or
- * `times.length` if every value is smaller — the standard binary
- * lower-bound, O(log n) rather than a linear scan over what can be a
- * multi-thousand-point loaded series. Used by `setVisibleTimeRange` to
- * resolve a `from` time to its start index. */
-function lowerBound(times: number[], target: number): number {
-  let lo = 0;
-  let hi = times.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (times[mid]! < target) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
-/** First index in `times` (ascending) whose value is `> target`, or
- * `times.length` if none is — the exclusive end boundary for a `to` time,
- * so a range `[lowerBound(from), upperBound(to))` includes every point
- * with a time in `[from, to]` inclusive on both ends. */
-function upperBound(times: number[], target: number): number {
-  let lo = 0;
-  let hi = times.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (times[mid]! <= target) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
 
 /**
  * Interactive chart: drag to pan, wheel to zoom, drag the price-axis strip
