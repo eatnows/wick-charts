@@ -682,4 +682,108 @@ describe('ChartRenderer (candlestick)', () => {
       expect(restoreIdx).toBeLessThan(firstAxisStrokeIdx);
     });
   });
+
+  describe('invertValueAxis', () => {
+    it('mirrors a plugin\'s yForValue/valueForY top-to-bottom compared to the default orientation', () => {
+      const normal = new ChartRenderer(canvas, candlestickSeries);
+      const inverted = new ChartRenderer(canvas, candlestickSeries, { invertValueAxis: true });
+      let normalY: number | null = null;
+      let invertedY: number | null = null;
+
+      const probe = (setY: (y: number) => void) => ({ draw: (api: { yForValue: (v: number) => number }) => setY(api.yForValue(105)) });
+
+      normal.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [probe((y) => (normalY = y))],
+        panes: [],
+      });
+      inverted.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [probe((y) => (invertedY = y))],
+        panes: [],
+      });
+
+      // Same value, same value-range and chartHeight (identical chart
+      // setup otherwise) — an inverted chart must place it at the
+      // mirror-image pixel: normalY + invertedY === chartHeight.
+      expect(normalY).not.toBeNull();
+      expect(invertedY).not.toBeNull();
+      expect(normalY! + invertedY!).toBeCloseTo(normal.chartHeight, 5);
+    });
+
+    it('setInvertValueAxis flips subsequent renders without reconstructing the chart', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      let firstY: number | null = null;
+      let secondY: number | null = null;
+      const render = (setY: (y: number) => void) =>
+        renderer.render({
+          sorted: SAMPLE,
+          times: TIMES,
+          viewport: new Viewport(SAMPLE.length),
+          hoverIndex: null,
+          hoverY: null,
+          plugins: [{ draw: (api) => setY(api.yForValue(105)) }],
+          panes: [],
+        });
+
+      render((y) => (firstY = y));
+      renderer.setInvertValueAxis(true);
+      render((y) => (secondY = y));
+
+      expect(firstY! + secondY!).toBeCloseTo(renderer.chartHeight, 5);
+    });
+
+    it('inverts the hover crosshair\'s price-label value the same way pixelToValue predicts', () => {
+      // A fixed value range (rather than candlestick's auto-fit) makes the
+      // expected label text computable by hand instead of duplicating the
+      // renderer's own range-fitting logic in this test.
+      const fixedRangeSeries: SeriesDefinition<Candle, unknown> = {
+        type: 'test-fixed-range',
+        defaultStyle: {},
+        getValueRange: () => ({ min: 0, max: 200 }),
+        draw: () => {},
+      };
+      const hoverY = 50;
+      // chartHeight = 400 - 24 (default timeHeight) = 376.
+      // pixelToValue(50, 0, 200, 376, false) ≈ 173.40 -> formatted "173"
+      // pixelToValue(50, 0, 200, 376, true)  ≈  26.60 -> formatted "27"
+
+      const normal = new ChartRenderer(canvas, fixedRangeSeries);
+      ctx.fillText.mockClear();
+      normal.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY,
+        plugins: [],
+        panes: [],
+      });
+      const normalTexts = ctx.fillText.mock.calls.map((call) => call[0]);
+
+      const inverted = new ChartRenderer(canvas, fixedRangeSeries, { invertValueAxis: true });
+      ctx.fillText.mockClear();
+      inverted.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY,
+        plugins: [],
+        panes: [],
+      });
+      const invertedTexts = ctx.fillText.mock.calls.map((call) => call[0]);
+
+      expect(normalTexts).toContain('173');
+      expect(invertedTexts).toContain('27');
+    });
+  });
 });

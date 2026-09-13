@@ -904,6 +904,87 @@ describe('WickChart', () => {
     });
   });
 
+  describe('invertValueAxis', () => {
+    it('defaults to false, and reflects the constructor option', () => {
+      const chart = new WickChart(canvas);
+      expect(chart.isValueAxisInverted()).toBe(false);
+
+      const invertedChart = new WickChart(canvas, { invertValueAxis: true });
+      expect(invertedChart.isValueAxisInverted()).toBe(true);
+    });
+
+    it('setInvertValueAxis toggles the flag and re-renders without throwing', () => {
+      const chart = new WickChart(canvas);
+      chart.setData(makeSeries(10));
+      chart.render();
+
+      chart.setInvertValueAxis(true);
+      expect(chart.isValueAxisInverted()).toBe(true);
+      expect(() => chart.render()).not.toThrow();
+
+      chart.setInvertValueAxis(false);
+      expect(chart.isValueAxisInverted()).toBe(false);
+    });
+
+    it("mirrors a pointer event's reported value around the range midpoint compared to a non-inverted chart", () => {
+      const { canvas: c1 } = createTestCanvas(800, 400);
+      const { canvas: c2 } = createTestCanvas(800, 400);
+      const normal = new WickChart(c1);
+      const inverted = new WickChart(c2, { invertValueAxis: true });
+      normal.setData(makeSeries(50));
+      inverted.setData(makeSeries(50));
+
+      // Seed identical, deterministic manual value-range overrides on both
+      // charts (any mousedown does this — see ensureValueRangeOverride).
+      fireMouse(c1, 'mousedown', { clientX: 400, clientY: 200 });
+      fireMouse(window, 'mouseup', {});
+      fireMouse(c2, 'mousedown', { clientX: 400, clientY: 200 });
+      fireMouse(window, 'mouseup', {});
+      const range = normal.getValueRangeOverride()!;
+      expect(inverted.getValueRangeOverride()).toEqual(range);
+
+      let normalValue: number | null = null;
+      let invertedValue: number | null = null;
+      normal.addPlugin({ draw: () => {}, onPointerDown: (e) => ((normalValue = e.value), false) });
+      inverted.addPlugin({ draw: () => {}, onPointerDown: (e) => ((invertedValue = e.value), false) });
+
+      fireMouse(c1, 'mousedown', { clientX: 100, clientY: 150 });
+      fireMouse(window, 'mouseup', {});
+      fireMouse(c2, 'mousedown', { clientX: 100, clientY: 150 });
+      fireMouse(window, 'mouseup', {});
+
+      expect(normalValue).not.toBeNull();
+      expect(invertedValue).not.toBeNull();
+      // pixelToValue(y, min, max, h, false) + pixelToValue(y, min, max, h, true) === min + max
+      expect(normalValue! + invertedValue!).toBeCloseTo(range.min + range.max, 5);
+    });
+
+    it('flips the direction a vertical drag shifts the manual value-range override (regression: dragging would otherwise run backwards on an inverted chart)', () => {
+      const { canvas: c1 } = createTestCanvas(800, 400);
+      const { canvas: c2 } = createTestCanvas(800, 400);
+      const normal = new WickChart(c1);
+      const inverted = new WickChart(c2, { invertValueAxis: true });
+      normal.setData(makeSeries(50));
+      inverted.setData(makeSeries(50));
+
+      fireMouse(c1, 'mousedown', { clientX: 400, clientY: 200 });
+      fireMouse(c2, 'mousedown', { clientX: 400, clientY: 200 });
+      const before1 = normal.getValueRangeOverride()!;
+      const before2 = inverted.getValueRangeOverride()!;
+      expect(before1).toEqual(before2); // identical starting range, same canvas/data
+
+      fireMouse(c1, 'mousemove', { clientX: 400, clientY: 250 }); // drag down 50px
+      fireMouse(c2, 'mousemove', { clientX: 400, clientY: 250 });
+      fireMouse(window, 'mouseup', {});
+
+      const shiftNormal = normal.getValueRangeOverride()!.min - before1.min;
+      const shiftInverted = inverted.getValueRangeOverride()!.min - before2.min;
+
+      expect(shiftNormal).not.toBe(0);
+      expect(shiftInverted).toBeCloseTo(-shiftNormal, 5);
+    });
+  });
+
   describe('plugin pointer gestures (interactive plugins: drawing tools, etc.)', () => {
     it('lets a plugin claim a mousedown and suppresses the chart\'s own panning for that gesture', () => {
       const chart = new WickChart(canvas);

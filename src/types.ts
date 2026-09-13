@@ -184,9 +184,9 @@ export interface WickChartOptions {
   /**
    * Which registered series type to render this chart as (see
    * `registerSeries` in `src/series/registry.ts`). Defaults to
-   * `'candlestick'`, the only type built into the library today — adding a
-   * new one is a matter of implementing `SeriesDefinition` and registering
-   * it, without changing `WickChart` or `ChartRenderer` at all.
+   * `'candlestick'`; `'line'` is the other type built into the library —
+   * adding a new one is a matter of implementing `SeriesDefinition` and
+   * registering it, without changing `WickChart` or `ChartRenderer` at all.
    */
   type?: string;
   /** Background color of the canvas. Defaults to transparent. Chart-wide
@@ -210,4 +210,15 @@ export interface WickChartOptions {
   crosshair?: ChartCrosshairOptions;
   /** Hover legend coloring. Merged over the built-in defaults field by field. */
   legend?: ChartLegendOptions;
+  /**
+   * Mirrors the value axis top-to-bottom — every pane's higher values
+   * render lower on screen instead of higher, with no change to the
+   * underlying data (a candle's open/close relationship, and therefore
+   * its up/down color, is unaffected). Defaults to `false`. Useful for a
+   * "what if this series had moved the opposite way" view. Can also be
+   * toggled after construction via `WickChart.setInvertValueAxis` without
+   * losing pan/zoom state — see `src/valueAxis.ts` for the mapping this
+   * flips.
+   */
+  invertValueAxis?: boolean;
 }

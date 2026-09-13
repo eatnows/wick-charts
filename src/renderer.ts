@@ -2,6 +2,7 @@ import { formatAxisLabel, formatHoverTime, pickTickIndices } from './axis.js';
 import { createScale } from './hybridScale.js';
 import { computePaneLayout } from './paneLayout.js';
 import { formatPrice, niceTicks } from './priceAxis.js';
+import { pixelToValue, valueAxisPixelRange } from './valueAxis.js';
 import type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
 import type { Scale } from './hybridScale.js';
 import type { PaneRect } from './paneLayout.js';
@@ -116,6 +117,12 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
   private axis: Required<ChartAxisOptions>;
   private crosshair: Required<ChartCrosshairOptions>;
   private legend: Required<ChartLegendOptions>;
+  /** Unlike the style groups above, mutable after construction — see
+   * `setInvertValueAxis`. A live toggle, not a one-time style choice, is
+   * the whole point of this option (a "what if this series moved the
+   * opposite way" view a user flips on and off), so it doesn't get the
+   * "resolved once in the constructor" treatment those get. */
+  private invertValueAxis: boolean;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -131,6 +138,11 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     this.axis = { ...DEFAULT_AXIS, ...options.axis };
     this.crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
     this.legend = { ...DEFAULT_LEGEND, ...options.legend };
+    this.invertValueAxis = options.invertValueAxis ?? false;
+  }
+
+  setInvertValueAxis(inverted: boolean): void {
+    this.invertValueAxis = inverted;
   }
 
   /** Pixel width of the point-plotting area — excludes the price-axis
@@ -193,11 +205,12 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     // JS below a few hundred points, WASM above — see hybridScale.ts.
     // Whichever it picks, `dispose()` must run once we're done reading
     // from it (a no-op on the JS path, a real WASM memory free otherwise).
+    // valueAxisPixelRange picks which pixel end is the domain minimum —
+    // the one thing invertValueAxis actually changes about this call.
     const { scale: yScale, dispose: disposeYScale } = createScale(
       valueMin,
       valueMax,
-      chartHeight,
-      0,
+      ...valueAxisPixelRange(chartHeight, this.invertValueAxis),
       visible.length,
     );
 
@@ -205,11 +218,18 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     // — its own value domain (from `PaneOptions.getValueRange`) and its
     // own JS/WASM scale over its own pixel height — kept alive for the
     // whole frame alongside `yScale`, since plugins targeting a pane draw
-    // only after every pane's axis has already been rendered.
+    // only after every pane's axis has already been rendered. Inverted the
+    // same way as the main pane so a chart's invertValueAxis option
+    // mirrors its whole stack consistently, not just the price pane.
     const paneScales = paneRects.map((rect, i) => {
       const pane = panes[i]!;
       const { min, max } = pane.getValueRange();
-      const { scale, dispose } = createScale(min, max, rect.height, 0, visible.length);
+      const { scale, dispose } = createScale(
+        min,
+        max,
+        ...valueAxisPixelRange(rect.height, this.invertValueAxis),
+        visible.length,
+      );
       return { pane, rect, min, max, scale, dispose };
     });
 
@@ -363,9 +383,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       },
       indexForX,
       // Exact inverse of the mapping above: subtract the pane's top offset
-      // before inverting the same [valueMin, valueMax] -> [rect.height, 0]
-      // mapping createScale set up for it.
-      valueForY: (y) => valueMin + (1 - (y - rect.top) / rect.height) * (valueMax - valueMin),
+      // before inverting the same value<->pixel mapping createScale set up
+      // for it (see src/valueAxis.ts — same invertValueAxis flag, so this
+      // stays consistent with whichever direction the pane actually drew in).
+      valueForY: (y) => pixelToValue(y - rect.top, valueMin, valueMax, rect.height, this.invertValueAxis),
       visibleStartIndex,
       visibleEndIndex,
       allPoints,
@@ -514,8 +535,9 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
 
     if (priceLineVisible) {
       // Exact inverse of the value->y mapping createScale set up for this
-      // frame — same formula as PluginRenderApi.valueForY.
-      const value = valueMin + (1 - hoverY / chartHeight) * (valueMax - valueMin);
+      // frame — same helper (and same invertValueAxis flag) as
+      // PluginRenderApi.valueForY, see src/valueAxis.ts.
+      const value = pixelToValue(hoverY, valueMin, valueMax, chartHeight, this.invertValueAxis);
       this.renderPriceLabelChip(formatPrice(value, priceStep), hoverY, chartWidth);
     }
     this.renderTimeLabelChip(formatHoverTime(timeSeconds), x, chartHeight, canvas.width);

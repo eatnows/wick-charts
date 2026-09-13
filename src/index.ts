@@ -4,6 +4,7 @@ import { computePaneLayout } from './paneLayout.js';
 import { ChartRenderer } from './renderer.js';
 import { getSeries } from './series/registry.js';
 import { toUnixSeconds } from './time.js';
+import { pixelToValue, valueToPixel } from './valueAxis.js';
 import { Viewport } from './viewport.js';
 import { loadWasm } from './wasm.js';
 import { importRealWasm } from './wasmImporter.js';
@@ -145,12 +146,19 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
    * may come from a different source that does have more). */
   private exhausted: Record<LoadDirection, boolean> = { before: false, after: false };
 
+  /** Mirrors `this.renderer`'s own copy (set at construction, kept in sync
+   * by `setInvertValueAxis`) — needed here too since pointer-event value
+   * conversion and price-axis drag direction happen outside `render()`,
+   * where only `WickChart` (not `ChartRenderer`) is involved. */
+  private invertValueAxis: boolean;
+
   constructor(
     private canvas: HTMLCanvasElement,
     options?: WickChartOptions,
   ) {
     this.seriesDefinition = getSeries<TPoint, unknown>(options?.type ?? 'candlestick');
     this.renderer = new ChartRenderer(canvas, this.seriesDefinition, options);
+    this.invertValueAxis = options?.invertValueAxis ?? false;
     this.viewport = new Viewport(0);
     // Without this, a touch drag on the canvas also scrolls/zooms the page
     // underneath it — the browser's native touch gestures and this class's
@@ -327,6 +335,26 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
     return this.hoverIndex === null ? null : (this.sorted[this.hoverIndex] ?? null);
   }
 
+  /**
+   * Mirrors the value axis top-to-bottom (or restores it) and re-renders —
+   * see `WickChartOptions.invertValueAxis` for what this actually changes.
+   * A live toggle, unlike most other style options: pan/zoom/valueRangeOverride
+   * state is untouched, so a "flip" button can call this on an existing
+   * chart without losing the user's current view, the same way
+   * `setPluginVisible` toggles a plugin without losing its state.
+   */
+  setInvertValueAxis(inverted: boolean): this {
+    this.invertValueAxis = inverted;
+    this.renderer.setInvertValueAxis(inverted);
+    this.scheduleRender();
+    return this;
+  }
+
+  /** Whether the value axis is currently mirrored — see `setInvertValueAxis`. */
+  isValueAxisInverted(): boolean {
+    return this.invertValueAxis;
+  }
+
   /** Removes all attached listeners. Call on unmount — the mouseup
    * listener is on `window` (so drags don't get stuck if the cursor
    * leaves the canvas mid-drag) and won't be garbage-collected on its own. */
@@ -447,7 +475,13 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
       // Dragging down moves the visible value window down (content
       // follows the cursor), matching the horizontal drag's "grab and
       // slide" feel — see the pan call above for the mirrored X case.
-      this.viewport.panValueRange(deltaYDevice * valuePerPixel);
+      // invertValueAxis flips which value-space direction "down the
+      // screen" corresponds to (see src/valueAxis.ts), so the sign here
+      // has to flip too or an inverted chart would pan backwards relative
+      // to the drag — negated, not re-derived, since the *magnitude* is
+      // identical either way.
+      const directionSign = this.invertValueAxis ? -1 : 1;
+      this.viewport.panValueRange(deltaYDevice * valuePerPixel * directionSign);
     }
 
     this.scheduleRender();
@@ -771,7 +805,7 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
     const range = this.frameValueRange();
     const chartHeight = this.mainPaneHeight();
     if (!range || chartHeight <= 0) return null;
-    return range.min + (1 - y / chartHeight) * (range.max - range.min);
+    return pixelToValue(y, range.min, range.max, chartHeight, this.invertValueAxis);
   }
 
   /** x pixel -> global (possibly fractional) index — the exact inverse of
@@ -800,7 +834,7 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
     const range = this.frameValueRange();
     const chartHeight = this.mainPaneHeight();
     if (!range || chartHeight <= 0) return null;
-    return chartHeight * (1 - (value - range.min) / (range.max - range.min));
+    return valueToPixel(value, range.min, range.max, chartHeight, this.invertValueAxis);
   }
 
   private pointerEventAt(x: number, y: number): ChartPointerEvent {
