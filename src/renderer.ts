@@ -234,10 +234,23 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       // `x = (index - viewport.startIndex) * slotWidth + slotWidth / 2` for `index`.
       const indexForX = (x: number) => viewport.startIndex + (x - slotWidth / 2) / slotWidth;
 
-      seriesDefinition.draw(
-        { ctx, visible, startIndex: startIdx, xForIndex, slotWidth, yScale, chartHeight },
-        style,
-      );
+      // save/restore isolates whatever canvas state a series's draw()
+      // touches (lineWidth, line dash, ...) from the axis/crosshair/plugin
+      // drawing that follows — the same isolation each plugin already gets
+      // around its own draw() call below. Without this, a property no
+      // series happened to set before (lineSeries.draw() is the first
+      // built-in one to set ctx.lineWidth) would silently leak into every
+      // subsequent stroke() this frame, including axis boundary lines,
+      // grid lines, and the crosshair.
+      ctx.save();
+      try {
+        seriesDefinition.draw(
+          { ctx, visible, startIndex: startIdx, xForIndex, slotWidth, yScale, chartHeight },
+          style,
+        );
+      } finally {
+        ctx.restore();
+      }
 
       const priceStep = this.currentPriceStep(valueMin, valueMax);
       this.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, mainRect.top);

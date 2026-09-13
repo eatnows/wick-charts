@@ -5,6 +5,7 @@ import { candlestickSeries } from './series/candlestick';
 import { createTestCanvas } from './testHelpers';
 import { Viewport } from './viewport';
 import type { Candle } from './types';
+import type { SeriesDefinition } from './series/types';
 import type { FakeContext2D } from './testHelpers';
 
 function candle(time: number, open: number, high: number, low: number, close: number): Candle {
@@ -636,6 +637,49 @@ describe('ChartRenderer (candlestick)', () => {
       });
 
       expect(mainApiChartHeight).toBe(renderer.chartHeight);
+    });
+  });
+
+  describe('series draw() canvas-state isolation', () => {
+    it('wraps seriesDefinition.draw() in save/restore, closed before axis rendering starts', () => {
+      // FakeContext2D's save/restore are plain spies with no real stack
+      // behavior (jsdom has no 2D canvas to snapshot), so this can't
+      // observe an actual property being reverted — only that render()
+      // brackets the series's draw() with save() before and restore()
+      // after, the same ordering guarantee a real CanvasRenderingContext2D
+      // would use to undo whatever draw() touched (see the regression this
+      // guards: lineSeries.draw() sets ctx.lineWidth and never resets it).
+      const order: string[] = [];
+      ctx.save.mockImplementation(() => order.push('save'));
+      ctx.restore.mockImplementation(() => order.push('restore'));
+      ctx.stroke.mockImplementation(() => order.push('stroke')); // axis boundary/grid lines call this
+
+      const probeSeries: SeriesDefinition<Candle, unknown> = {
+        type: 'test-probe',
+        defaultStyle: {},
+        getValueRange: () => ({ min: 0, max: 100 }),
+        draw: () => order.push('series-draw'),
+      };
+      const renderer = new ChartRenderer(canvas, probeSeries);
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+        panes: [],
+      });
+
+      const saveIdx = order.indexOf('save');
+      const drawIdx = order.indexOf('series-draw');
+      const restoreIdx = order.indexOf('restore');
+      const firstAxisStrokeIdx = order.indexOf('stroke');
+
+      expect(saveIdx).toBeGreaterThanOrEqual(0);
+      expect(saveIdx).toBeLessThan(drawIdx);
+      expect(drawIdx).toBeLessThan(restoreIdx);
+      expect(restoreIdx).toBeLessThan(firstAxisStrokeIdx);
     });
   });
 });
