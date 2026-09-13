@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-09-13
+
+### Changed
+
+- Internal refactor, no behavior or public API change. `ChartRenderer`
+  had grown to 625 lines mixing frame orchestration with ~230 lines of
+  axis/crosshair drawing that needed nothing beyond already-resolved
+  style options and per-call geometry — split into two collaborators,
+  `AxisRenderer` and `CrosshairRenderer`, each with direct unit tests
+  (previously only exercised indirectly through `ChartRenderer`).
+  `lowerBound`/`upperBound` (used by `setVisibleTimeRange`) moved out
+  of `index.ts` into their own `src/binarySearch.ts`, since they're
+  pure array math unrelated to chart state. All 240 tests pass
+  unchanged; `renderer.ts` is 625 → 403 lines.
+
 ## [0.7.0] — 2026-09-13
 
 ### Added

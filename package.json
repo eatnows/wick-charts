@@ -1,6 +1,6 @@
 {
   "name": "wick-charts",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "An open-source financial charting library — WASM (Rust) for compute, Canvas2D for rendering.",
   "license": "MIT",
   "author": "eatnows",
