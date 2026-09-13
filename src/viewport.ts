@@ -63,6 +63,23 @@ export class Viewport {
     this.startIndex = clamp(anchorIndex - anchorRatio * newVisibleCount, 0, maxStart);
   }
 
+  /**
+   * Replaces the visible window outright with `[startIndex, endIndex)`,
+   * clamped the same way `pan`/`zoom` already are (a floor on
+   * `visibleCount` so the window never collapses to nothing, and never
+   * extends past `[0, totalCount]`). The primitive a programmatic "jump to
+   * this range" builds on (see `WickChart.setVisibleRange`/
+   * `setVisibleTimeRange`) — unlike `pan`/`zoom`, which shift or scale the
+   * *current* window for a continuous gesture, this discards it and starts
+   * fresh from whatever was requested.
+   */
+  setVisibleIndexRange(startIndex: number, endIndex: number, totalCount: number): void {
+    const requestedCount = endIndex - startIndex;
+    this.visibleCount = clamp(requestedCount, MIN_VISIBLE_COUNT, Math.max(totalCount, MIN_VISIBLE_COUNT));
+    const maxStart = Math.max(0, totalCount - this.visibleCount);
+    this.startIndex = clamp(startIndex, 0, maxStart);
+  }
+
   /** Multiplies the value-scale factor, clamped to a sane range so the
    * value axis can't be dragged into showing nothing or clipping data.
    * Only affects the auto-fit path — a no-op once `valueRangeOverride` is

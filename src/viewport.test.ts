@@ -72,4 +72,41 @@ describe('Viewport', () => {
     vp.scaleValueRange(2);
     expect(vp.valueRangeOverride).toEqual({ min: 50, max: 250 });
   });
+
+  describe('setVisibleIndexRange', () => {
+    it('jumps directly to the requested window', () => {
+      const vp = new Viewport(1000, 20); // starts near the tail end
+      vp.setVisibleIndexRange(100, 150, 1000);
+      expect(vp.startIndex).toBe(100);
+      expect(vp.visibleCount).toBe(50);
+      expect(vp.endIndex).toBe(150);
+    });
+
+    it('clamps the start so the window never leaves [0, totalCount]', () => {
+      const vp = new Viewport(100, 20);
+      vp.setVisibleIndexRange(-50, 0, 100);
+      expect(vp.startIndex).toBe(0);
+
+      vp.setVisibleIndexRange(90, 130, 100); // requests past the last point
+      expect(vp.startIndex + vp.visibleCount).toBeLessThanOrEqual(100);
+    });
+
+    it('floors visibleCount at the minimum even for an inverted or zero-width request', () => {
+      const vp = new Viewport(100, 20);
+      vp.setVisibleIndexRange(50, 50, 100); // zero width
+      expect(vp.visibleCount).toBeGreaterThanOrEqual(5);
+
+      vp.setVisibleIndexRange(50, 40, 100); // endIndex before startIndex
+      expect(vp.visibleCount).toBeGreaterThanOrEqual(5);
+    });
+
+    it('does not touch value-range state', () => {
+      const vp = new Viewport(100, 20);
+      vp.setValueRangeOverride({ min: 100, max: 200 });
+      vp.scaleValue(2);
+      vp.setVisibleIndexRange(10, 30, 100);
+      expect(vp.valueRangeOverride).toEqual({ min: 100, max: 200 });
+      expect(vp.valueScaleFactor).toBe(2);
+    });
+  });
 });
