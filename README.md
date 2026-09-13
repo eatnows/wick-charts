@@ -5,6 +5,10 @@
 
 An open-source financial charting library. WASM (Rust) for compute, Canvas2D for rendering.
 
+```bash
+npm install wick-charts
+```
+
 ## Contents
 
 - [Why](#why)
