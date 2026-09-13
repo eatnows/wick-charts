@@ -6,6 +6,7 @@ import { resetWasmForTesting } from './wasm';
 import type { Candle } from './types';
 import type { DataRequest } from './dataSource';
 import type { ChartPlugin } from './plugins/types';
+import { hitTestPoint } from './hitTest';
 
 function makeSeries(count: number, startTime = 0): Candle[] {
   return Array.from({ length: count }, (_, i) => {
@@ -864,6 +865,68 @@ describe('CinderChart', () => {
       expect(left.value).not.toBeNull();
       expect(right.value).not.toBeNull();
       expect(left.value!).toBeGreaterThan(right.value!); // higher on screen (smaller y) -> larger value
+    });
+
+    it('exposes xForIndex/yForValue as the exact inverse of the event\'s own index/value', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+      let seen: import('./plugins/types').ChartPointerEvent | undefined;
+      chart.addPlugin({
+        draw: () => {},
+        onPointerDown: (e) => {
+          seen = e;
+          return false;
+        },
+      });
+
+      fireMouse(canvas, 'mousedown', { clientX: 300, clientY: 150 });
+      fireMouse(window, 'mouseup', {});
+
+      expect(seen).toBeDefined();
+      // mapping the event's own index/value back through xForIndex/yForValue
+      // must land on the same pixel the event itself was dispatched at
+      expect(seen!.xForIndex(seen!.index)).toBeCloseTo(seen!.x, 5);
+      expect(seen!.yForValue(seen!.value!)).toBeCloseTo(seen!.y, 5);
+    });
+
+    it('lets a plugin hit-test a shape it stores in data space using the event\'s forward mapping', () => {
+      const chart = new CinderChart(canvas);
+      chart.setData(makeSeries(500));
+
+      // simulates a trend line already placed at a single data-space anchor
+      let placedAnchor: { index: number; value: number } | undefined;
+      const firstClick: Array<{ index: number; value: number | null }> = [];
+      chart.addPlugin({
+        draw: () => {},
+        onPointerDown: (e) => {
+          if (!placedAnchor) {
+            firstClick.push(e); // nothing placed yet — just record where this click landed
+            return false;
+          }
+          const x1 = e.xForIndex(placedAnchor.index);
+          const y1 = e.yForValue(placedAnchor.value)!;
+          return hitTestPoint(e.x, e.y, x1, y1, 6);
+        },
+      });
+
+      // first click: capture where it landed in data space, to hit-test against later
+      fireMouse(canvas, 'mousedown', { clientX: 300, clientY: 150 });
+      fireMouse(window, 'mouseup', {});
+      placedAnchor = { index: firstClick[0]!.index, value: firstClick[0]!.value! };
+
+      const before = chart.getVisibleRange().startIndex;
+
+      // clicking the same spot again should hit-test true and claim the gesture
+      fireMouse(canvas, 'mousedown', { clientX: 300, clientY: 150 });
+      fireMouse(canvas, 'mousemove', { clientX: 400, clientY: 150 }); // would pan if not claimed
+      fireMouse(window, 'mouseup', {});
+      expect(chart.getVisibleRange().startIndex).toBe(before); // claimed — no panning
+
+      // clicking somewhere far away should miss and fall through to panning
+      fireMouse(canvas, 'mousedown', { clientX: 10, clientY: 10 });
+      fireMouse(canvas, 'mousemove', { clientX: 110, clientY: 10 });
+      fireMouse(window, 'mouseup', {});
+      expect(chart.getVisibleRange().startIndex).toBeLessThan(before); // missed — panned normally
     });
 
     it('supports touch: claiming a touchstart suppresses panning, and touchend fires onPointerUp', () => {

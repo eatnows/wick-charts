@@ -251,6 +251,48 @@ the mechanism but would fight with panning in a real app (every drag becomes a n
 real drawing tool gates `onPointerDown` behind its own "tool active" state (a toggle button,
 a keyboard modifier, whatever fits the app), only claiming gestures while armed.
 
+#### Selecting a placed shape: hit-testing
+
+Placing a line is only half of a drawing tool — re-selecting one that's already on the chart
+(to drag it, delete it, or just highlight it) means answering "is this click on/near the shape
+I already drew," which a `<canvas>` can't tell you on its own: it never reports which pixels
+belong to what you painted, only raw pointer coordinates. `distanceToSegment`/`hitTestSegment`/
+`hitTestPoint` (from `cinder-charts`) are that missing piece — the point-to-segment geometry
+every line-shaped drawing tool needs, written once instead of re-derived (and subtly
+mis-derived at the endpoints) per plugin:
+
+```ts
+import { hitTestSegment } from 'cinder-charts';
+
+chart.addPlugin({
+  draw({ ctx, xForIndex, yForValue }) {
+    ctx.strokeStyle = selected ? '#ffcc00' : '#00c2ff';
+    ctx.beginPath();
+    ctx.moveTo(xForIndex(line.start.index), yForValue(line.start.value));
+    ctx.lineTo(xForIndex(line.end.index), yForValue(line.end.value));
+    ctx.stroke();
+  },
+  onPointerDown(e) {
+    // convert the line's own data-space endpoints to this event's pixels —
+    // e.xForIndex/e.yForValue are the forward direction, the same mapping
+    // e.index/e.value came from, always valid for the pointer position this
+    // particular event carries even as the chart pans/zooms between clicks
+    const x1 = e.xForIndex(line.start.index);
+    const y1 = e.yForValue(line.start.value);
+    const x2 = e.xForIndex(line.end.index);
+    const y2 = e.yForValue(line.end.value);
+    selected = y1 !== null && y2 !== null && hitTestSegment(e.x, e.y, x1, y1, x2, y2);
+    return selected; // claim the gesture only once selected, to drag it from here
+  },
+});
+```
+
+The line's endpoints are kept in data space (`index`/`value`), not pixels — that's what makes
+them survive a pan or zoom between when the line was drawn and when the user clicks it again.
+`hitTestPoint` is the same idea for a single point (a marker, a drag handle on one endpoint)
+rather than an edge; both default to a 6px tolerance, comfortably clickable with a mouse and
+forgiving enough for a fingertip on touch.
+
 #### Managing a growing list of plugins
 
 An app with more than a couple of indicators/drawing tools attached usually wants a UI for

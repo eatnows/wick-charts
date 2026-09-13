@@ -57,12 +57,23 @@ export interface PluginRenderApi<TPoint extends SeriesPoint = SeriesPoint> {
  * fractional global (sorted-array) index, and `value` is the value under
  * the pointer in the current frame's y-domain — `null` if there's no data
  * or no usable chart area to compute one against.
+ *
+ * `xForIndex`/`yForValue` are the forward direction — for converting a
+ * shape a plugin is storing in data space (so it survives pan/zoom) back
+ * to pixels at the moment of this event, to compare against `x`/`y` with
+ * `hitTestSegment`/`hitTestPoint` (see `src/hitTest.ts`). Same caveat as
+ * `PluginRenderApi`'s mapping functions: valid for this dispatch only —
+ * the mapping shifts on the next pan/zoom/frame, so call them
+ * synchronously inside the handler that received this event, never stash
+ * them for later.
  */
 export interface ChartPointerEvent {
   x: number;
   y: number;
   index: number;
   value: number | null;
+  xForIndex: (index: number) => number;
+  yForValue: (value: number) => number | null;
 }
 
 /**

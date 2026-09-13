@@ -13,7 +13,8 @@ import type { Candle, CinderChartOptions, SeriesPoint, ValueRange } from './type
 
 export type { BusinessDay, Candle, CinderChartOptions, CinderTime, SeriesPoint, UnixMillis, ValueRange } from './types.js';
 export type { DataLoader, DataRequest } from './dataSource.js';
-export type { ChartPlugin, PluginRenderApi } from './plugins/types.js';
+export type { ChartPlugin, ChartPointerEvent, PluginRenderApi } from './plugins/types.js';
+export { distanceToSegment, hitTestPoint, hitTestSegment } from './hitTest.js';
 export type { Scale } from './hybridScale.js';
 export { mergeSeriesPoints } from './mergeSeries.js';
 export { registerSeries, getSeries } from './series/registry.js';
@@ -687,8 +688,35 @@ export class CinderChart<TPoint extends SeriesPoint = Candle> {
     return this.viewport.startIndex + (x - slotWidth / 2) / slotWidth;
   }
 
+  /** Global (possibly fractional) index -> x pixel — the exact inverse of
+   * `indexForX` above, and the same formula `ChartRenderer.render` draws
+   * with for the current viewport. Exposed on `ChartPointerEvent` so a
+   * plugin can convert a shape it's storing in data space back to pixels
+   * for hit-testing, without duplicating this math itself. */
+  private xForIndex(index: number): number {
+    const slotWidth = this.renderer.chartWidth / this.viewport.visibleCount;
+    return (index - this.viewport.startIndex) * slotWidth + slotWidth / 2;
+  }
+
+  /** Value in the range the next render would use -> y pixel — the exact
+   * inverse of `valueForY` above. `null` under the same conditions
+   * `valueForY` returns `null` for. */
+  private yForValue(value: number): number | null {
+    const range = this.frameValueRange();
+    const chartHeight = this.renderer.chartHeight;
+    if (!range || chartHeight <= 0) return null;
+    return chartHeight * (1 - (value - range.min) / (range.max - range.min));
+  }
+
   private pointerEventAt(x: number, y: number): ChartPointerEvent {
-    return { x, y, index: this.indexForX(x), value: this.valueForY(y) };
+    return {
+      x,
+      y,
+      index: this.indexForX(x),
+      value: this.valueForY(y),
+      xForIndex: (index) => this.xForIndex(index),
+      yForValue: (value) => this.yForValue(value),
+    };
   }
 
   /** Same as `pointerEventAt`, but starting from `lastX`/`lastY` (raw
