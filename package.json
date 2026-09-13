@@ -17,16 +17,19 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "wasm-pkg",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "build": "pnpm clean && tsc -p tsconfig.json",
     "build:wasm": "wasm-pack build crates/cinderchart-core --target web --out-dir ../../wasm-pkg --out-name cinderchart_core",
     "demo": "pnpm build:wasm && pnpm build && python3 -m http.server 4173",
     "test": "vitest run",
     "test:rust": "cargo test",
-    "check:rust": "cargo check --target wasm32-unknown-unknown -p cinderchart-core"
+    "check:rust": "cargo check --target wasm32-unknown-unknown -p cinderchart-core",
+    "prepublishOnly": "pnpm build:wasm && pnpm build && pnpm test"
   },
   "devDependencies": {
     "jsdom": "^30.0.1",
