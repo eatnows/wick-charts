@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] — 2026-09-13
 
 ### Added
 
@@ -19,6 +19,15 @@ and this project uses [Semantic Versioning](https://semver.org/).
   non-finite (`NaN`) `value` is treated as an explicit gap: the line
   breaks and resumes at the next real value. See "Line charts" in the
   README.
+
+### Fixed
+
+- A series's `draw()` (only the new line series hits this) could leak
+  canvas state — `lineSeries.draw()` sets `ctx.lineWidth` and never reset
+  it — into the axis, grid, and crosshair lines drawn afterward in the
+  same frame. `ChartRenderer` now wraps every `seriesDefinition.draw()`
+  call in `save()`/`restore()`, the same isolation each `ChartPlugin`'s
+  `draw()` already gets.
 
 ## [0.4.0] — 2026-09-13
 
