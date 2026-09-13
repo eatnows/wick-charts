@@ -5,6 +5,31 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-09-13
+
+### Added
+
+- **`WickChartOptions.formatLegend`**: overrides the active series's
+  `formatLegend` for one chart instance instead of every chart of that
+  series type. `SeriesDefinition.formatLegend` (candlestick/line's
+  fixed, English, OHLC-shaped default) is a per-series-*type* default,
+  registered once and shared by every chart of that type — there was no
+  way to vary the hover legend's text per app/session/locale without
+  writing and registering a whole new series. The override receives a new
+  `LegendFormatContext` (`{ index, allPoints }`) alongside the hovered
+  point and style, so it can also compute a value derived from
+  *neighboring* points — a percent change against the previous point,
+  say — which the hovered point alone can't express.
+  `SeriesDefinition.formatLegend` itself gained the same `context`
+  parameter (candlestick/line don't need it, but a custom series now can).
+  Returning `[]` suppresses the built-in tooltip entirely, the same as a
+  series with no `formatLegend` — for an app that wants to draw a fully
+  custom tooltip layout itself via a `ChartPlugin` instead of just
+  different text. `createCandlestickChart`/`createLineChart` type-check
+  `formatLegend`'s `point`/`style` against the concrete series, the same
+  way they already do for `style`. See "Customizing the hover legend text"
+  in the README.
+
 ## [0.8.0] — 2026-09-13
 
 ### Fixed
