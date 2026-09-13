@@ -5,6 +5,35 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-09-13
+
+### Fixed
+
+- **devicePixelRatio was never accounted for.** Every size option
+  (`font.axisSize`/`legendSize`, `axis.priceWidth`/`timeHeight`,
+  `crosshair.labelPaddingX`/`labelPaddingY`,
+  `legend.paddingX`/`paddingY`/`cursorGap`, `LineStyle.lineWidth`) is
+  authored in CSS pixels, but was applied directly as canvas backing-store
+  pixels — so on any canvas resized per the README's own recommended
+  high-DPI recipe (`canvas.width = cssWidth * devicePixelRatio`), every
+  axis label, crosshair chip, and legend tooltip rendered at half (or a
+  third, at `devicePixelRatio: 3`) its intended visual size. `ChartRenderer`
+  now detects the ratio itself, live, from `canvas.width`/`height` vs.
+  `canvas.getBoundingClientRect()` — the same signal `WickChart` already
+  used internally for pointer-coordinate conversion — and scales every size
+  option by it before drawing, each frame, with no new option to set and no
+  resize notification to wire up. See "High-DPI displays" in the README.
+  No effect on a canvas that isn't backing-store-scaled (ratio 1).
+
+### Added
+
+- **`PluginRenderApi.devicePixelRatio`** / **`SeriesDrawContext.devicePixelRatio`**:
+  the same ratio the engine now uses internally, exposed so a `ChartPlugin`
+  or a custom `SeriesDefinition` can scale its *own* literal pixel sizes
+  (`ctx.lineWidth`, a font size, a marker radius) the same way — the engine
+  has no way to auto-scale a field it doesn't know the shape of. The
+  built-in line series now scales `LineStyle.lineWidth` this way itself.
+
 ## [0.7.1] — 2026-09-13
 
 ### Changed
