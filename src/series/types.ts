@@ -25,6 +25,17 @@ export interface SeriesDrawContext<TPoint extends SeriesPoint> {
   /** Value (price) -> y pixel for the current frame's domain. */
   yScale: Scale;
   chartHeight: number;
+  /** Ratio between the canvas's backing-store size and its CSS display
+   * size — 1 on a standard-DPI display, 2 on a typical Retina one. Every
+   * geometric field above (`slotWidth`, `chartHeight`, the pixels `yScale`
+   * maps to) is already in backing-store pixels, but a *literal* pixel
+   * size in `style` (a stroke width, say — `LineStyle.lineWidth` is the
+   * built-in example) is normally authored in CSS pixels, the same
+   * intuitive unit `WickChartOptions.font`/`axis`/`crosshair`/`legend` use;
+   * multiply such a field by this before setting it on `ctx` so it renders
+   * at its intended visual size rather than half that on a 2x display. See
+   * "High-DPI displays" in the README. */
+  devicePixelRatio: number;
 }
 
 /**

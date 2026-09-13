@@ -1,5 +1,6 @@
 import { AxisRenderer } from './axisRenderer.js';
 import { CrosshairRenderer } from './crosshairRenderer.js';
+import { devicePixelRatio } from './devicePixelRatio.js';
 import { createScale } from './hybridScale.js';
 import { computePaneLayout } from './paneLayout.js';
 import { pixelToValue, valueAxisPixelRange } from './valueAxis.js';
@@ -114,19 +115,29 @@ interface FrameGeometry<TPoint extends SeriesPoint> {
  * coloring/padding, legend color) is resolved once at construction from
  * `WickChartOptions.font`/`axis`/`crosshair`/`legend`, each merged field
  * by field over its own defaults — nothing here is a hardcoded module
- * constant a caller can't reach.
+ * constant a caller can't reach. Every *size* among them (font sizes, axis
+ * strip widths, padding, gaps) is specified in CSS pixels and scaled by the
+ * canvas's live devicePixelRatio (see `deviceRatio`) at the top of every
+ * `render()` call before use — colors and tick counts pass through
+ * unscaled. `AxisRenderer`/`CrosshairRenderer` themselves stay unaware of
+ * this: they're handed already-scaled options each frame, the same as they
+ * were handed unscaled ones before this existed.
  */
 export class ChartRenderer<TPoint extends SeriesPoint> {
   private ctx: CanvasRenderingContext2D;
   private background: string;
   private style: unknown;
-  /** Kept as its own field (unlike font/crosshair/legend, which only
-   * `AxisRenderer`/`CrosshairRenderer` need after construction) because
-   * `chartWidth`/`chartHeight`/`priceAxisWidth` below read it directly on
-   * every call, not just once at construction. */
+  /** Author-facing (CSS-pixel) style groups, resolved once at construction
+   * from `WickChartOptions.font`/`axis`/`crosshair`/`legend` — kept as
+   * fields so `render()` can rescale them fresh every frame against the
+   * canvas's current devicePixelRatio, which (a window dragged to a
+   * different-DPI monitor, a browser zoom change, or the app simply
+   * resizing the canvas) can change between frames. `axis` is additionally
+   * read directly by `chartWidth`/`chartHeight`/`priceAxisWidth` below. */
   private axis: Required<ChartAxisOptions>;
-  private axisRenderer: AxisRenderer;
-  private crosshairRenderer: CrosshairRenderer;
+  private font: Required<ChartFontOptions>;
+  private crosshair: Required<ChartCrosshairOptions>;
+  private legend: Required<ChartLegendOptions>;
   /** Unlike the style groups above, mutable after construction — see
    * `setInvertValueAxis`. A live toggle, not a one-time style choice, is
    * the whole point of this option (a "what if this series moved the
@@ -146,45 +157,98 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     this.style = { ...(seriesDefinition.defaultStyle as object), ...(options.style ?? {}) };
     this.axis = { ...DEFAULT_AXIS, ...options.axis };
     this.invertValueAxis = options.invertValueAxis ?? false;
-
-    const font = { ...DEFAULT_FONT, ...options.font };
-    const crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
-    const legend = { ...DEFAULT_LEGEND, ...options.legend };
-    this.axisRenderer = new AxisRenderer(ctx, this.axis, font);
-    this.crosshairRenderer = new CrosshairRenderer(ctx, crosshair, legend, font, this.axis.priceWidth);
+    this.font = { ...DEFAULT_FONT, ...options.font };
+    this.crosshair = { ...DEFAULT_CROSSHAIR, ...options.crosshair };
+    this.legend = { ...DEFAULT_LEGEND, ...options.legend };
   }
 
   setInvertValueAxis(inverted: boolean): void {
     this.invertValueAxis = inverted;
   }
 
+  /** Ratio between the canvas's backing-store size and its CSS display
+   * size — read live, not cached, for the same reason `chartWidth`/
+   * `chartHeight` below read `canvas.width`/`height` live: whatever it is
+   * *right now* is what this frame draws at. See `src/devicePixelRatio.ts`. */
+  private get deviceRatio(): number {
+    return devicePixelRatio(this.canvas, 'width');
+  }
+
   /** Pixel width of the point-plotting area — excludes the price-axis
    * strip on the right. Exposed so `WickChart` can convert cursor pixel
-   * positions to point indices / values for hit-testing and dragging. */
+   * positions to point indices / values for hit-testing and dragging.
+   * `priceAxisWidth` below is already devicePixelRatio-scaled, so this
+   * (and `chartHeight`) stay correct on a high-DPI canvas without
+   * `WickChart` having to know anything about DPR itself. */
   get chartWidth(): number {
-    return Math.max(0, this.canvas.width - this.axis.priceWidth);
+    return Math.max(0, this.canvas.width - this.priceAxisWidth);
   }
 
   get chartHeight(): number {
-    return Math.max(0, this.canvas.height - this.axis.timeHeight);
+    return Math.max(0, this.canvas.height - this.axis.timeHeight * this.deviceRatio);
   }
 
   get priceAxisWidth(): number {
-    return this.axis.priceWidth;
+    return this.axis.priceWidth * this.deviceRatio;
   }
 
   render(input: RenderInput<TPoint>): void {
     const { ctx, canvas, background, seriesDefinition, style } = this;
     const { sorted, times, viewport, hoverIndex, hoverY, plugins, panes } = input;
+    const ratio = this.deviceRatio;
+
+    // Scaled fresh every frame (see `deviceRatio`'s own doc comment for
+    // why this isn't done once at construction) — every *size* field gets
+    // multiplied by `ratio`, every color/count field passes through as-is.
+    // `AxisRenderer`/`CrosshairRenderer` are cheap POJO-ish collaborators
+    // with no state beyond these options, so rebuilding them here each
+    // frame is simpler than threading `ratio` through every one of their
+    // methods for what's otherwise the same "resolved options" shape they
+    // were built to take in the first place.
+    const scaledAxis: Required<ChartAxisOptions> = {
+      ...this.axis,
+      priceWidth: this.axis.priceWidth * ratio,
+      timeHeight: this.axis.timeHeight * ratio,
+    };
+    const scaledFont: Required<ChartFontOptions> = {
+      ...this.font,
+      axisSize: this.font.axisSize * ratio,
+      legendSize: this.font.legendSize * ratio,
+    };
+    const scaledCrosshair: Required<ChartCrosshairOptions> = {
+      ...this.crosshair,
+      labelPaddingX: this.crosshair.labelPaddingX * ratio,
+      labelPaddingY: this.crosshair.labelPaddingY * ratio,
+    };
+    const scaledLegend: Required<ChartLegendOptions> = {
+      ...this.legend,
+      paddingX: this.legend.paddingX * ratio,
+      paddingY: this.legend.paddingY * ratio,
+      cursorGap: this.legend.cursorGap * ratio,
+    };
+    const axisRenderer = new AxisRenderer(ctx, scaledAxis, scaledFont);
+    const crosshairRenderer = new CrosshairRenderer(
+      ctx,
+      scaledCrosshair,
+      scaledLegend,
+      scaledFont,
+      scaledAxis.priceWidth,
+    );
+
     const width = canvas.width;
     const height = canvas.height;
-    const chartWidth = this.chartWidth;
+    // Computed from `scaledAxis` (already built from `ratio` above) rather
+    // than by re-reading `this.chartWidth`/`chartHeight` — those getters
+    // recompute `deviceRatio`, which reads `getBoundingClientRect()` (a
+    // potential layout reflow in a real browser); doing that three times
+    // per frame instead of once matters at 60fps.
+    const chartWidth = Math.max(0, width - scaledAxis.priceWidth);
     // Full stack height: the main price pane plus every declared indicator
     // pane below it. `this.chartHeight` predates panes and named what's
     // now only true with zero of them — kept as the property name (public
     // API reads it through) but renamed locally here since most of this
     // method cares about one pane's height, not the stack's.
-    const stackHeight = this.chartHeight;
+    const stackHeight = Math.max(0, height - scaledAxis.timeHeight);
 
     ctx.clearRect(0, 0, width, height);
     if (background !== 'transparent') {
@@ -270,21 +334,21 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       ctx.save();
       try {
         seriesDefinition.draw(
-          { ctx, visible, startIndex: startIdx, xForIndex, slotWidth, yScale, chartHeight },
+          { ctx, visible, startIndex: startIdx, xForIndex, slotWidth, yScale, chartHeight, devicePixelRatio: ratio },
           style,
         );
       } finally {
         ctx.restore();
       }
 
-      const priceStep = this.axisRenderer.priceStep(valueMin, valueMax);
-      this.axisRenderer.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, mainRect.top);
+      const priceStep = axisRenderer.priceStep(valueMin, valueMax);
+      axisRenderer.renderPriceAxis(valueMin, valueMax, priceStep, yScale, chartWidth, chartHeight, mainRect.top);
       for (const { rect, min, max, scale } of paneScales) {
-        this.axisRenderer.renderPaneSeparator(rect.top, chartWidth);
-        const step = this.axisRenderer.priceStep(min, max);
-        this.axisRenderer.renderPriceAxis(min, max, step, scale, chartWidth, rect.height, rect.top);
+        axisRenderer.renderPaneSeparator(rect.top, chartWidth);
+        const step = axisRenderer.priceStep(min, max);
+        axisRenderer.renderPriceAxis(min, max, step, scale, chartWidth, rect.height, rect.top);
       }
-      this.axisRenderer.renderTimeAxis(times, startIdx, visible.length, stackHeight, chartWidth, xForIndex);
+      axisRenderer.renderTimeAxis(times, startIdx, visible.length, stackHeight, chartWidth, xForIndex);
 
       if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
         // The dashed vertical line spans the whole stack (every pane); the
@@ -292,7 +356,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
         // to the main pane only — an indicator pane's own hover readout,
         // if it wants one, is the job of whatever plugin draws into it.
         const legendParts = seriesDefinition.formatLegend?.(sorted[hoverIndex]!, style) ?? [];
-        this.crosshairRenderer.render({
+        crosshairRenderer.render({
           x: xForIndex(hoverIndex),
           timeSeconds: times[hoverIndex]!,
           hoverY,
@@ -323,10 +387,10 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
           allPoints: sorted,
           frameState,
         };
-        const mainApi = this.buildPluginApi(mainRect, valueMin, valueMax, yScale, frameGeometry);
+        const mainApi = this.buildPluginApi(mainRect, valueMin, valueMax, yScale, frameGeometry, ratio);
         const paneApiById = new Map<string, PluginRenderApi<TPoint>>();
         for (const { pane, rect, min, max, scale } of paneScales) {
-          paneApiById.set(pane.id, this.buildPluginApi(rect, min, max, scale, frameGeometry));
+          paneApiById.set(pane.id, this.buildPluginApi(rect, min, max, scale, frameGeometry, ratio));
         }
 
         for (const plugin of plugins) {
@@ -371,12 +435,14 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     valueMax: number,
     scale: Scale,
     geometry: FrameGeometry<TPoint>,
+    devicePixelRatio: number,
   ): PluginRenderApi<TPoint> {
     const { chartWidth, xForIndex, indexForX, visibleStartIndex, visibleEndIndex, allPoints, frameState } = geometry;
     return {
       ctx: this.ctx,
       chartWidth,
       chartHeight: rect.height,
+      devicePixelRatio,
       xForIndex,
       yForValue: (value) => {
         if (frameState.ended) {

@@ -27,6 +27,7 @@ function drawContext(visible: LinePoint[], ctx: FakeContext2D): SeriesDrawContex
     slotWidth: 10,
     yScale: identityScale(),
     chartHeight: 100,
+    devicePixelRatio: 1,
   };
 }
 
@@ -115,6 +116,14 @@ describe('lineSeries', () => {
       lineSeries.draw(drawContext([point(1, 10), point(2, 20)], ctx), style);
       expect(ctx.strokeStyle).toBe('#ff00ff');
       expect(ctx.lineWidth).toBe(3);
+    });
+
+    it('scales lineWidth by devicePixelRatio, since it is authored in CSS pixels', () => {
+      const ctx = createFakeContext();
+      const style = { lineColor: '#ff00ff', lineWidth: 3 };
+      const context = { ...drawContext([point(1, 10), point(2, 20)], ctx), devicePixelRatio: 2 };
+      lineSeries.draw(context, style);
+      expect(ctx.lineWidth).toBe(6);
     });
   });
 });

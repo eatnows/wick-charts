@@ -18,6 +18,15 @@ export interface PluginRenderApi<TPoint extends SeriesPoint = SeriesPoint> {
   ctx: CanvasRenderingContext2D;
   chartWidth: number;
   chartHeight: number;
+  /** Ratio between the canvas's backing-store size and its CSS display
+   * size — 1 on a standard-DPI display, 2 on a typical Retina one.
+   * `chartWidth`/`chartHeight` and everything `xForIndex`/`yForValue`
+   * return are already in backing-store pixels, but a plugin choosing its
+   * *own* literal pixel sizes (`ctx.lineWidth`, a font size in
+   * `ctx.font`, a marker radius) should multiply them by this first, the
+   * same way the built-in line series scales `LineStyle.lineWidth` — see
+   * "High-DPI displays" in the README. */
+  devicePixelRatio: number;
   /** Global (full sorted-array) index -> x pixel, same convention the
    * active series draws with. Valid only for the duration of this `draw()`
    * call — see the interface-level note on `PluginRenderApi`. */

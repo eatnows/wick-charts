@@ -683,6 +683,77 @@ describe('ChartRenderer (candlestick)', () => {
     });
   });
 
+  describe('devicePixelRatio scaling', () => {
+    // createTestCanvas's third/fourth args are the CSS (display) size — a
+    // backing store 2x the CSS size simulates devicePixelRatio 2, the same
+    // convention the README's canvas-resize recipe produces.
+    function retinaCanvas() {
+      return createTestCanvas(800, 400, 400, 200);
+    }
+
+    it('scales chartWidth/chartHeight/priceAxisWidth by the canvas backing-store ratio', () => {
+      const { canvas: retina } = retinaCanvas();
+      const renderer = new ChartRenderer(retina, candlestickSeries, { axis: { priceWidth: 64, timeHeight: 24 } });
+      // Author-facing values are CSS pixels; on a 2x backing store the
+      // strips must occupy twice as many backing-store pixels to look the
+      // same size on screen, and chartWidth/chartHeight (backing-store
+      // pixels) shrink by the same scaled amount.
+      expect(renderer.priceAxisWidth).toBe(128);
+      expect(renderer.chartWidth).toBe(800 - 128);
+      expect(renderer.chartHeight).toBe(400 - 48);
+    });
+
+    it('scales font/crosshair/legend size options for drawing, without a live resize notification', () => {
+      const { canvas: retina, ctx: retinaCtx } = retinaCanvas();
+      const renderer = new ChartRenderer(retina, candlestickSeries, { font: { axisSize: 10 } });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [],
+        panes: [],
+      });
+      // 10 CSS px authored, 2x backing store -> 20 device px.
+      expect(retinaCtx.font).toBe('20px sans-serif');
+    });
+
+    it('passes devicePixelRatio through to seriesDefinition.draw() and PluginRenderApi', () => {
+      const { canvas: retina } = retinaCanvas();
+      let seenBySeries: number | undefined;
+      let seenByPlugin: number | undefined;
+      const probeSeries: SeriesDefinition<Candle, unknown> = {
+        type: 'test-probe',
+        defaultStyle: {},
+        getValueRange: () => ({ min: 0, max: 100 }),
+        draw: (context) => {
+          seenBySeries = context.devicePixelRatio;
+        },
+      };
+      const renderer = new ChartRenderer(retina, probeSeries);
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: null,
+        hoverY: null,
+        plugins: [{ draw: (api) => (seenByPlugin = api.devicePixelRatio) }],
+        panes: [],
+      });
+
+      expect(seenBySeries).toBe(2);
+      expect(seenByPlugin).toBe(2);
+    });
+
+    it('does not change anything at devicePixelRatio 1 (the CSS size equals the backing store)', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      expect(renderer.priceAxisWidth).toBe(64);
+      expect(renderer.chartWidth).toBe(800 - 64);
+      expect(renderer.chartHeight).toBe(400 - 24);
+    });
+  });
+
   describe('invertValueAxis', () => {
     it('mirrors a plugin\'s yForValue/valueForY top-to-bottom compared to the default orientation', () => {
       const normal = new ChartRenderer(canvas, candlestickSeries);

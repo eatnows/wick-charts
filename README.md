@@ -19,6 +19,7 @@ npm install wick-charts
   - [Candle data](#candle-data)
   - [Line charts](#line-charts)
   - [Styling](#styling)
+  - [High-DPI displays (devicePixelRatio)](#high-dpi-displays-devicepixelratio)
   - [Inverting the value axis](#inverting-the-value-axis)
   - [Reading chart state](#reading-chart-state)
   - [Setting the visible range](#setting-the-visible-range)
@@ -228,6 +229,44 @@ the right of it, and clamped so it never runs off the chart's edges. `createCand
 type-checks `style` against
 `CandlestickStyle`; the more general `new WickChart(canvas, { type: 'candlestick', style })`
 also works but doesn't — see "Series types" below for why, if you're curious.
+
+Every `px` value above (`font.axisSize`/`legendSize`, `axis.priceWidth`/`timeHeight`,
+`crosshair.labelPaddingX`/`labelPaddingY`, `legend.paddingX`/`paddingY`/`cursorGap`, and
+`LineStyle.lineWidth`) is authored in **CSS pixels** — the intuitive "how big should this look
+on screen" unit — regardless of the canvas's actual backing-store resolution. See the next
+section for what that means in practice.
+
+### High-DPI displays (devicePixelRatio)
+
+The [Quick start](#quick-start) resize snippet sizes the canvas's backing store
+(`canvas.width`/`height`) to `devicePixelRatio` times its CSS display size — the standard
+recipe for a crisp, non-blurry `<canvas>` on a Retina/high-DPI screen. wick-charts detects this
+itself, live, by comparing `canvas.width`/`height` against `canvas.getBoundingClientRect()` on
+every frame — there's no `devicePixelRatio` option to set, and nothing to recompute yourself on
+resize or on a browser zoom change; the chart just reads whatever the canvas's current backing
+store vs. CSS size actually is.
+
+Once detected, every CSS-pixel size option listed at the end of the previous section is scaled
+by that ratio before it's used — so `axisSize: 10` always looks like a 10px font on screen,
+whether the backing store is 1x or 3x the CSS size, and you never have to pre-multiply any
+option by `window.devicePixelRatio` yourself. (Colors and tick counts — `priceTickCount`,
+`timeMaxTicks` — aren't sizes and pass through unscaled.)
+
+This only reaches what the engine itself draws. A `ChartPlugin` or a custom `SeriesDefinition`
+sets its own canvas properties directly (`ctx.lineWidth`, a font size in `ctx.font`, a marker
+radius), and the engine has no way to know which of those are meant to be sizes — so both
+`PluginRenderApi` and `SeriesDrawContext` carry a `devicePixelRatio` field for exactly this:
+multiply your own literal pixel sizes by it before setting them on `ctx`, the same way the
+built-in line series scales `LineStyle.lineWidth`:
+
+```ts
+// inside a ChartPlugin's draw(api), or a custom SeriesDefinition's draw(context, style)
+ctx.lineWidth = 2 * api.devicePixelRatio; // always ~2 CSS px, not 2 backing-store px
+```
+
+If you never resize the canvas to a scaled backing store at all (`canvas.width` already equals
+its CSS display size, the default for an unstyled `<canvas>`), the ratio is exactly 1 and
+nothing here changes anything.
 
 ### Inverting the value axis
 

@@ -26,6 +26,7 @@ function drawContext(visible: Candle[], ctx: FakeContext2D): SeriesDrawContext<C
     slotWidth: 10,
     yScale: identityScale(),
     chartHeight: 100,
+    devicePixelRatio: 1,
   };
 }
 

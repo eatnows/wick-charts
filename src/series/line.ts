@@ -32,7 +32,7 @@ function getValueRange(visible: LinePoint[], scaleFactor: number): ValueRange {
 }
 
 function draw(context: SeriesDrawContext<LinePoint>, style: LineStyle): void {
-  const { ctx, visible, startIndex, xForIndex, yScale } = context;
+  const { ctx, visible, startIndex, xForIndex, yScale, devicePixelRatio } = context;
   if (visible.length === 0) return;
 
   // Batched through mapMany (one call per array) rather than once per
@@ -43,7 +43,11 @@ function draw(context: SeriesDrawContext<LinePoint>, style: LineStyle): void {
   const ys = yScale.mapMany(visible.map((p) => p.value));
 
   ctx.strokeStyle = style.lineColor;
-  ctx.lineWidth = style.lineWidth;
+  // `lineWidth` is authored in CSS pixels, like every other size in
+  // `WickChartOptions` — scaled to backing-store pixels here so the stroke
+  // renders at its intended visual thickness on a high-DPI canvas instead
+  // of half that. See `SeriesDrawContext.devicePixelRatio`.
+  ctx.lineWidth = style.lineWidth * devicePixelRatio;
   ctx.beginPath();
 
   // `drawing` tracks whether the path is mid-segment — a non-finite value
