@@ -416,6 +416,43 @@ describe('ChartRenderer (candlestick)', () => {
       expect(tooltipBox[3]).toBe(100);
     });
 
+    it('uses a custom cursorGap to offset the tooltip from the hovered pixel', () => {
+      const defaultGap = new ChartRenderer(canvas, candlestickSeries);
+      defaultGap.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+      const defaultBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+
+      const wideGap = new ChartRenderer(canvas, candlestickSeries, { legend: { cursorGap: 40 } });
+      wideGap.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+      });
+      const wideGapBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+
+      // a larger cursorGap pushes the tooltip further right of the hovered pixel
+      expect(wideGapBox[0]).toBeGreaterThan(defaultBox[0]);
+    });
+
     it('draws fewer axis tick labels with a smaller priceTickCount/timeMaxTicks', () => {
       const manyCandles = Array.from({ length: 100 }, (_, i) => candle(i, 100 + i, 105 + i, 95 + i, 102 + i));
       const manyTimes = manyCandles.map((c) => c.time as number);

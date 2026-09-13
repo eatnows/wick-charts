@@ -121,6 +121,9 @@ export interface ChartLegendOptions {
   paddingX?: number;
   /** Vertical padding, in px, inside the tooltip. Defaults to 6. */
   paddingY?: number;
+  /** Gap, in px, between the hovered pixel and the tooltip's nearest edge.
+   * Defaults to 12. */
+  cursorGap?: number;
 }
 
 export interface CinderChartOptions {

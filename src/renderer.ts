@@ -45,10 +45,8 @@ const DEFAULT_LEGEND: Required<ChartLegendOptions> = {
   background: '#3a3a3a',
   paddingX: 8,
   paddingY: 6,
+  cursorGap: 12,
 };
-
-/** Gap, in px, between the hovered pixel and the tooltip's nearest edge. */
-const LEGEND_CURSOR_GAP = 12;
 
 export interface RenderInput<TPoint extends SeriesPoint> {
   /** Every point, sorted ascending by normalized time. */
@@ -379,10 +377,11 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
 
   /** The OHLC(+volume) tooltip — floats near the hovered pixel like a
    * speech bubble, one line per part, rather than a fixed banner glued to
-   * a corner of the canvas. Offset up-and-right of the cursor/finger and
-   * clamped to both chart edges so it never runs off-screen, including
-   * when there's no `hoverY` to anchor to (a series with no primary value
-   * still gets a legend, just pinned near the top at the hovered column). */
+   * a corner of the canvas. Offset up-and-right of the cursor/finger by
+   * `legend.cursorGap` and clamped to both chart edges so it never runs
+   * off-screen, including when there's no `hoverY` to anchor to (a series
+   * with no primary value still gets a legend, just pinned near the top
+   * at the hovered column). */
   private renderHoverTooltip(
     lines: string[],
     x: number,
@@ -401,8 +400,11 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     const boxHeight = lines.length * lineHeight + legend.paddingY * 2;
 
     const anchorY = hoverY ?? 0;
-    const left = Math.min(Math.max(x + LEGEND_CURSOR_GAP, 0), Math.max(0, chartWidth - boxWidth));
-    const top = Math.min(Math.max(anchorY - boxHeight - LEGEND_CURSOR_GAP, 0), Math.max(0, chartHeight - boxHeight));
+    const left = Math.min(Math.max(x + legend.cursorGap, 0), Math.max(0, chartWidth - boxWidth));
+    const top = Math.min(
+      Math.max(anchorY - boxHeight - legend.cursorGap, 0),
+      Math.max(0, chartHeight - boxHeight),
+    );
 
     ctx.fillStyle = legend.background;
     ctx.fillRect(left, top, boxWidth, boxHeight);

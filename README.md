@@ -142,6 +142,7 @@ const chart = createCandlestickChart(canvas, {
     background: '#3a3a3a', // the tooltip's background fill
     paddingX: 8, // horizontal padding inside the tooltip
     paddingY: 6, // vertical padding inside the tooltip
+    cursorGap: 12, // gap, in px, between the hovered pixel and the tooltip
   },
 });
 ```
