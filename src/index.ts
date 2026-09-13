@@ -1,4 +1,5 @@
 import { lowerBound, upperBound } from './binarySearch.js';
+import { devicePixelRatio } from './devicePixelRatio.js';
 import type { DataLoader } from './dataSource.js';
 import { mergeSeriesPoints } from './mergeSeries.js';
 import { computePaneLayout } from './paneLayout.js';
@@ -952,13 +953,11 @@ export class WickChart<TPoint extends SeriesPoint = Candle> {
    * conversion `cursorPosition` applies to absolute coordinates, extracted
    * so pixel *deltas* (drag distance, wheel deltaX) can be converted too. */
   private devicePixelScaleX(): number {
-    const rect = this.canvas.getBoundingClientRect();
-    return rect.width === 0 ? 1 : this.canvas.width / rect.width;
+    return devicePixelRatio(this.canvas, 'width');
   }
 
   private devicePixelScaleY(): number {
-    const rect = this.canvas.getBoundingClientRect();
-    return rect.height === 0 ? 1 : this.canvas.height / rect.height;
+    return devicePixelRatio(this.canvas, 'height');
   }
 }
 
