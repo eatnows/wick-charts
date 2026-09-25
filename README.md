@@ -256,13 +256,19 @@ const chart = createCandlestickChart(canvas, {
       `시가 ${candle.open.toLocaleString()}`,
       `고가 ${candle.high.toLocaleString()}`,
       `저가 ${candle.low.toLocaleString()}`,
-      `종가 ${candle.close.toLocaleString()}`,
       // A line can be a plain string (drawn in legend.textColor, like the
-      // four above) or { text, color } for one that needs its own color —
-      // see "Coloring individual legend lines" just below.
+      // three above), { text, color } for a whole line in its own color, or
+      // an array of { text, color } segments to color only *part* of one
+      // line — see "Coloring individual legend lines" just below.
       change === null
-        ? '등락 —'
-        : { text: `등락 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`, color: change >= 0 ? '#22c55e' : '#ef4444' },
+        ? `종가 ${candle.close.toLocaleString()}`
+        : [
+            { text: `종가 ${candle.close.toLocaleString()} ` },
+            {
+              text: `(${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`,
+              color: change >= 0 ? '#22c55e' : '#ef4444',
+            },
+          ],
     ];
   },
 });
@@ -276,12 +282,13 @@ the previous point regardless of where the user has panned/zoomed to.
 
 #### Coloring individual legend lines
 
-Every line returned by `formatLegend` is a `LegendLine` — either a plain `string`, drawn in
-`legend.textColor` like every line before this existed, or `{ text, color }` for one line that
-needs its own color independent of the rest (the `change` line above: green when positive, red
-when negative, regardless of `legend.textColor`). Mixing both shapes in one returned array, as
-above, is the normal case — only the lines that actually need a distinct color use the object
-form. There's no chart-wide "green means up" setting for this: which color means "up" is a
+Every line returned by `formatLegend` is a `LegendLine` — a plain `string`, drawn in
+`legend.textColor` like every line before this existed; `{ text, color }` for one line that
+needs its own color independent of the rest; or a `LegendSegment[]` (`{ text, color? }[]`) for
+several colored runs on the *same* line — the `종가` line above keeps its label in
+`legend.textColor` and colors only the `(±%)` suffix, rather than tinting the whole line green
+or red. Mixing all three shapes in one returned array, as above, is the normal case — only the
+text that actually needs a distinct color gets it. There's no chart-wide "green means up" setting for this: which color means "up" is a
 convention that varies by market (green-up in most markets, red-up in South Korea and a few
 others) and isn't something the library should hardcode, so `formatLegend` decides it per line
 the same way it decides everything else about the legend's text. This is separate from

@@ -205,15 +205,23 @@ export interface LegendFormatContext<TPoint extends SeriesPoint = SeriesPoint> {
   allPoints: readonly TPoint[];
 }
 
+/** One colored run of text within a legend line — see `LegendLine`. */
+export interface LegendSegment {
+  text: string;
+  color?: string;
+}
+
 /**
- * One line of the hover legend — a plain `string` (drawn in the legend's
- * configured `textColor`, same as every version of this library before
- * per-line color existed) or `{ text, color }` for a line that needs its
- * own color independent of the rest — a percent-change line that should
- * read green/red by sign, say. Mixing both in the same `formatLegend`
- * return array is fine: each line is colored independently.
+ * One line of the hover legend:
+ *  - a plain `string`, drawn in the legend's configured `textColor`;
+ *  - `{ text, color }`, a whole line in its own color;
+ *  - `LegendSegment[]`, several runs of text drawn left-to-right on the
+ *    same line, each independently colored — e.g. a plain label followed
+ *    by a colored `(+1.23%)` suffix, without tinting the label too.
+ * Mixing all three shapes in the same `formatLegend` return array is fine:
+ * each line is laid out independently.
  */
-export type LegendLine = string | { text: string; color?: string };
+export type LegendLine = string | LegendSegment | LegendSegment[];
 
 export interface WickChartOptions {
   /**

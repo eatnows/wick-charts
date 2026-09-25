@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] — 2026-09-26
+
+### Added
+
+- **`LegendLine` can now be a `LegendSegment[]`** — several colored runs of
+  text on the same legend line, not just a whole-line color. Lets a line
+  like `종가 71,234 (+1.23%)` keep its label in the default `legend.textColor`
+  while coloring only the `(±%)` suffix, instead of tinting the entire line.
+  `toSegments()` in `crosshairRenderer.ts` normalizes every existing
+  `LegendLine` shape (`string`, `{ text, color }`) to this form internally,
+  so both older shapes keep working unchanged.
+
 ## [0.10.1] — 2026-09-25
 
 ### Fixed

@@ -1,7 +1,16 @@
 import { formatHoverTime } from './axis.js';
 import { formatPrice } from './priceAxis.js';
 import { pixelToValue } from './valueAxis.js';
-import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions, LegendLine } from './types.js';
+import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions, LegendLine, LegendSegment } from './types.js';
+
+/** Normalizes any `LegendLine` shape to the one form actually drawn:
+ * a list of colored segments (a plain string/line becomes one segment
+ * with no color override). */
+function toSegments(line: LegendLine): LegendSegment[] {
+  if (typeof line === 'string') return [{ text: line }];
+  if (Array.isArray(line)) return line;
+  return [line];
+}
 
 /** Everything one frame's hover crosshair/legend needs — computed by
  * `ChartRenderer.render()` (which owns the hovered point, the active
@@ -131,12 +140,14 @@ export class CrosshairRenderer {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    // Each line is either a plain string or { text, color } — normalize to
-    // its text once up front for sizing, and read its own color (falling
-    // back to legend.textColor) only when actually drawing it below.
-    const texts = lines.map((line) => (typeof line === 'string' ? line : line.text));
+    // Normalize every line to its segments once up front — sizing needs
+    // each line's full concatenated width; drawing needs each segment's
+    // own color (falling back to legend.textColor).
+    const segmentedLines = lines.map(toSegments);
     const lineHeight = font.legendSize + 4;
-    const textWidth = Math.max(...texts.map((text) => ctx.measureText(text).width));
+    const textWidth = Math.max(
+      ...segmentedLines.map((segments) => segments.reduce((w, seg) => w + ctx.measureText(seg.text).width, 0)),
+    );
     const boxWidth = textWidth + legend.paddingX * 2;
     const boxHeight = lines.length * lineHeight + legend.paddingY * 2;
 
@@ -150,9 +161,14 @@ export class CrosshairRenderer {
     ctx.fillStyle = legend.background;
     ctx.fillRect(left, top, boxWidth, boxHeight);
 
-    lines.forEach((line, i) => {
-      ctx.fillStyle = typeof line === 'string' ? legend.textColor : (line.color ?? legend.textColor);
-      ctx.fillText(texts[i]!, left + legend.paddingX, top + legend.paddingY + i * lineHeight);
+    segmentedLines.forEach((segments, i) => {
+      let segX = left + legend.paddingX;
+      const y = top + legend.paddingY + i * lineHeight;
+      for (const seg of segments) {
+        ctx.fillStyle = seg.color ?? legend.textColor;
+        ctx.fillText(seg.text, segX, y);
+        segX += ctx.measureText(seg.text).width;
+      }
     });
   }
 

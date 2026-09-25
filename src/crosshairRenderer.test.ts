@@ -125,6 +125,23 @@ describe('CrosshairRenderer', () => {
     expect(ctx.fillRect.mock.calls.length).toBeGreaterThan(fillRectCallsEmpty);
   });
 
+  it('colors only the segments given a color within a single legend line, leaving the rest in legend.textColor', () => {
+    const ctx = createFakeContext();
+    const renderer = makeRenderer(ctx);
+
+    renderer.render({
+      ...baseInput(),
+      legendParts: [[{ text: 'High 105 ' }, { text: '(+1.23%)', color: '#00ff00' }]],
+    });
+
+    const label = ctx.fillText.mock.calls.find((c) => c[0] === 'High 105 ');
+    const change = ctx.fillText.mock.calls.find((c) => c[0] === '(+1.23%)');
+    expect(label).toBeDefined();
+    expect(change).toBeDefined();
+    // the colored segment is drawn after the label, offset by the label's measured width
+    expect(change![1]).toBeGreaterThan(label![1] as number);
+  });
+
   it('clamps the time-axis label chip within canvasWidth', () => {
     const ctx = createFakeContext();
     const renderer = makeRenderer(ctx);
