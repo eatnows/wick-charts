@@ -72,7 +72,7 @@ export class CrosshairRenderer {
 
     ctx.save();
     ctx.strokeStyle = crosshair.lineColor;
-    ctx.setLineDash([4, 4]);
+    ctx.setLineDash(crosshair.lineDash);
 
     // Spans the whole pane stack (not just the main pane's own
     // chartHeight) so hovering a candle lines up with the same column

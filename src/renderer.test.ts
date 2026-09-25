@@ -767,6 +767,22 @@ describe('ChartRenderer (candlestick)', () => {
       expect(retinaCtx.font).toBe('20px sans-serif');
     });
 
+    it('scales crosshair.lineDash segment lengths the same way as every other size option', () => {
+      const { canvas: retina, ctx: retinaCtx } = retinaCanvas();
+      const renderer = new ChartRenderer(retina, candlestickSeries, { crosshair: { lineDash: [4, 4] } });
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+        panes: [],
+      });
+      // 4 CSS px authored, 2x backing store -> 8 device px.
+      expect(retinaCtx.setLineDash).toHaveBeenCalledWith([8, 8]);
+    });
+
     it('passes devicePixelRatio through to seriesDefinition.draw() and PluginRenderApi', () => {
       const { canvas: retina } = retinaCanvas();
       let seenBySeries: number | undefined;

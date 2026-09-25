@@ -6,6 +6,7 @@ import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions } from
 
 const CROSSHAIR: Required<ChartCrosshairOptions> = {
   lineColor: '#909090',
+  lineDash: [4, 4],
   labelBackground: '#3a3a3a',
   labelTextColor: '#f0f0f0',
   labelPaddingX: 4,
@@ -22,8 +23,8 @@ const LEGEND: Required<ChartLegendOptions> = {
 
 const FONT: Required<ChartFontOptions> = { family: 'sans-serif', axisSize: 10, legendSize: 11 };
 
-function makeRenderer(ctx: FakeContext2D): CrosshairRenderer {
-  return new CrosshairRenderer(ctx as unknown as CanvasRenderingContext2D, CROSSHAIR, LEGEND, FONT, 64);
+function makeRenderer(ctx: FakeContext2D, crosshair: Required<ChartCrosshairOptions> = CROSSHAIR): CrosshairRenderer {
+  return new CrosshairRenderer(ctx as unknown as CanvasRenderingContext2D, crosshair, LEGEND, FONT, 64);
 }
 
 function baseInput() {
@@ -56,6 +57,24 @@ describe('CrosshairRenderer', () => {
     expect(ctx.setLineDash).toHaveBeenCalledWith([4, 4]);
     expect(ctx.moveTo).toHaveBeenCalledWith(100, 0);
     expect(ctx.lineTo).toHaveBeenCalledWith(100, 500);
+  });
+
+  it('draws a solid crosshair line when lineDash is an empty array', () => {
+    const ctx = createFakeContext();
+    const renderer = makeRenderer(ctx, { ...CROSSHAIR, lineDash: [] });
+    renderer.render(baseInput());
+
+    // [] is the canvas API's own convention for "no dashing" — same as passing
+    // it straight to ctx.setLineDash()
+    expect(ctx.setLineDash).toHaveBeenCalledWith([]);
+  });
+
+  it('uses a custom lineDash pattern', () => {
+    const ctx = createFakeContext();
+    const renderer = makeRenderer(ctx, { ...CROSSHAIR, lineDash: [8, 2] });
+    renderer.render(baseInput());
+
+    expect(ctx.setLineDash).toHaveBeenCalledWith([8, 2]);
   });
 
   it('draws the horizontal price line only when hoverY is within [0, chartHeight]', () => {

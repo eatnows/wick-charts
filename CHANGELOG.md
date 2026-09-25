@@ -38,6 +38,11 @@ and this project uses [Semantic Versioning](https://semver.org/).
   moving volume off the in-pane backdrop and into a dedicated `addPane` +
   `ChartPlugin` pane instead, the same mechanism already used for
   RSI/MACD-style indicators.
+- **`ChartCrosshairOptions.lineDash`**: the crosshair's dash pattern (CSS
+  px, scaled by `devicePixelRatio` like every other size option here) was
+  hardcoded to `[4, 4]`; now configurable per chart instance. Pass `[]`
+  for a solid line — the same convention `CanvasRenderingContext2D
+  .setLineDash` itself uses, so this needed no separate on/off flag.
 
 ## [0.9.0] — 2026-09-13
 

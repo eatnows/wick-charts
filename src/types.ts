@@ -110,8 +110,13 @@ export interface ChartAxisOptions {
 /** Coloring and padding for the hover crosshair's lines and its two
  * highlighted axis-label chips. */
 export interface ChartCrosshairOptions {
-  /** Dashed crosshair line color. Defaults to `'#9090904d'`. */
+  /** Crosshair line color. Defaults to `'#9090904d'`. */
   lineColor?: string;
+  /** `CanvasRenderingContext2D.setLineDash` pattern, in CSS px (scaled by
+   * `devicePixelRatio` like every other size field here). Defaults to
+   * `[4, 4]`. Pass `[]` for a solid line — the same canvas convention
+   * `setLineDash` itself uses, so this needs no separate on/off flag. */
+  lineDash?: number[];
   /** Background fill of the price/time label chips. Defaults to `'#3a3a3a'`. */
   labelBackground?: string;
   /** Text color inside the label chips. Defaults to `'#f0f0f0'`. */
