@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
-## [0.10.0] — 2026-09-25
+## [0.10.1] — 2026-09-25
 
 ### Fixed
 
@@ -47,6 +47,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
   (CSS px, same `devicePixelRatio` scaling) was never set explicitly
   (silently inheriting the canvas default of 1); now configurable,
   defaulting to `1`.
+
+*(0.10.0 was never actually published — a `npm publish` attempt left it stuck
+in a "staged but not visible" state on the registry, so this content shipped
+as 0.10.1 instead. No code difference from what 0.10.0 would have been.)*
 
 ## [0.9.0] — 2026-09-13
 
