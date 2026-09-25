@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] — 2026-09-25
+
+### Fixed
+
+- **The hover legend/crosshair could be covered by a plugin.** They used
+  to render right after the axes, before any `ChartPlugin` ran — so a
+  main-pane overlay plugin (trade markers, say) drawing its own shape
+  painted right over the OHLC tooltip. Moved to draw last, after every
+  plugin (including `paneId`-targeted ones), so it's always the topmost
+  thing on the chart when shown.
+- **`CandlestickStyle.volumeAreaHeightRatio: 0` didn't fully suppress the
+  in-pane volume backdrop.** The `Math.max(1, ...)` height floor in
+  `drawVolumeBars` still drew a 1px sliver per candle regardless. Added
+  the missing early return — needed for the new "volume in its own pane"
+  pattern below, where the old in-pane backdrop and the new pane would
+  otherwise double-draw.
+
+### Added
+
+- **`LegendLine`**: a hover-legend line returned by `formatLegend` can now
+  be `{ text, color }` instead of a plain `string`, for one line that
+  needs its own color independent of `legend.textColor` — a percent-change
+  line that should read green/red by sign, say. Fully backward compatible
+  (a plain string still works exactly as before); mixing both shapes in
+  one returned array is the normal case. No chart-wide "up/down color"
+  setting was added on purpose — which color means "up" is a market
+  convention `formatLegend` should decide per line, not something the
+  library should hardcode. See "Coloring individual legend lines" in the
+  README.
+- **README: "Splitting volume into its own pane"** — a worked example of
+  moving volume off the in-pane backdrop and into a dedicated `addPane` +
+  `ChartPlugin` pane instead, the same mechanism already used for
+  RSI/MACD-style indicators.
+
 ## [0.9.0] — 2026-09-13
 
 ### Added
