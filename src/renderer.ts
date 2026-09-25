@@ -40,6 +40,7 @@ const DEFAULT_AXIS: Required<ChartAxisOptions> = {
 
 const DEFAULT_CROSSHAIR: Required<ChartCrosshairOptions> = {
   lineColor: '#9090904d',
+  lineWidth: 1,
   lineDash: [4, 4],
   labelBackground: '#3a3a3a',
   labelTextColor: '#f0f0f0',
@@ -224,6 +225,7 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
     };
     const scaledCrosshair: Required<ChartCrosshairOptions> = {
       ...this.crosshair,
+      lineWidth: this.crosshair.lineWidth * ratio,
       lineDash: this.crosshair.lineDash.map((segment) => segment * ratio),
       labelPaddingX: this.crosshair.labelPaddingX * ratio,
       labelPaddingY: this.crosshair.labelPaddingY * ratio,

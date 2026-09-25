@@ -43,6 +43,10 @@ and this project uses [Semantic Versioning](https://semver.org/).
   hardcoded to `[4, 4]`; now configurable per chart instance. Pass `[]`
   for a solid line — the same convention `CanvasRenderingContext2D
   .setLineDash` itself uses, so this needed no separate on/off flag.
+- **`ChartCrosshairOptions.lineWidth`**: the crosshair line's thickness
+  (CSS px, same `devicePixelRatio` scaling) was never set explicitly
+  (silently inheriting the canvas default of 1); now configurable,
+  defaulting to `1`.
 
 ## [0.9.0] — 2026-09-13
 

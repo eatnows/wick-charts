@@ -72,6 +72,7 @@ export class CrosshairRenderer {
 
     ctx.save();
     ctx.strokeStyle = crosshair.lineColor;
+    ctx.lineWidth = crosshair.lineWidth;
     ctx.setLineDash(crosshair.lineDash);
 
     // Spans the whole pane stack (not just the main pane's own

@@ -208,6 +208,7 @@ const chart = createCandlestickChart(canvas, {
   },
   crosshair: {
     lineColor: '#9090904d',
+    lineWidth: 1,
     lineDash: [4, 4], // [] for a solid line — same convention as ctx.setLineDash
     labelBackground: '#3a3a3a',
     labelTextColor: '#f0f0f0',

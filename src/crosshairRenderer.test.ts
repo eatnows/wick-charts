@@ -6,6 +6,7 @@ import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions } from
 
 const CROSSHAIR: Required<ChartCrosshairOptions> = {
   lineColor: '#909090',
+  lineWidth: 1,
   lineDash: [4, 4],
   labelBackground: '#3a3a3a',
   labelTextColor: '#f0f0f0',
@@ -75,6 +76,14 @@ describe('CrosshairRenderer', () => {
     renderer.render(baseInput());
 
     expect(ctx.setLineDash).toHaveBeenCalledWith([8, 2]);
+  });
+
+  it('uses a custom lineWidth', () => {
+    const ctx = createFakeContext();
+    const renderer = makeRenderer(ctx, { ...CROSSHAIR, lineWidth: 3 });
+    renderer.render(baseInput());
+
+    expect(ctx.lineWidth).toBe(3);
   });
 
   it('draws the horizontal price line only when hoverY is within [0, chartHeight]', () => {

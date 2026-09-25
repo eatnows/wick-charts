@@ -112,6 +112,9 @@ export interface ChartAxisOptions {
 export interface ChartCrosshairOptions {
   /** Crosshair line color. Defaults to `'#9090904d'`. */
   lineColor?: string;
+  /** Crosshair line thickness, in CSS px (scaled by `devicePixelRatio`
+   * like every other size field here). Defaults to `1`. */
+  lineWidth?: number;
   /** `CanvasRenderingContext2D.setLineDash` pattern, in CSS px (scaled by
    * `devicePixelRatio` like every other size field here). Defaults to
    * `[4, 4]`. Pass `[]` for a solid line — the same canvas convention
