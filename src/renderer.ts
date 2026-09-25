@@ -356,33 +356,6 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
       }
       axisRenderer.renderTimeAxis(times, startIdx, visible.length, stackHeight, chartWidth, xForIndex);
 
-      if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
-        // The dashed vertical line spans the whole stack (every pane); the
-        // horizontal line, price-label chip, and OHLC legend stay scoped
-        // to the main pane only — an indicator pane's own hover readout,
-        // if it wants one, is the job of whatever plugin draws into it.
-        // `formatLegendOverride`, when set, replaces the series's own
-        // formatLegend entirely for this chart instance rather than
-        // merging with it — see `WickChartOptions.formatLegend`.
-        const formatLegend = this.formatLegendOverride ?? seriesDefinition.formatLegend;
-        const legendContext: LegendFormatContext<TPoint> = { index: hoverIndex, allPoints: sorted };
-        const legendParts = formatLegend?.(sorted[hoverIndex]!, style, legendContext) ?? [];
-        crosshairRenderer.render({
-          x: xForIndex(hoverIndex),
-          timeSeconds: times[hoverIndex]!,
-          hoverY,
-          valueMin,
-          valueMax,
-          priceStep,
-          chartWidth,
-          chartHeight,
-          stackHeight,
-          invertValueAxis: this.invertValueAxis,
-          legendParts,
-          canvasWidth: canvas.width,
-        });
-      }
-
       if (plugins.length > 0) {
         // Everything every pane's PluginRenderApi shares — only the pane's
         // own rect/value-domain/scale differ between `buildPluginApi`
@@ -425,6 +398,38 @@ export class ChartRenderer<TPoint extends SeriesPoint> {
             ctx.restore();
           }
         }
+      }
+
+      // Drawn last, after every plugin (including paneId'd ones and main-pane
+      // overlays like trade markers) rather than right after the axes, so the
+      // hover legend/crosshair always sits on top of everything else instead
+      // of being covered by a plugin's own output — the crosshair is the most
+      // "active"/topmost thing on the chart at the moment it's shown.
+      if (hoverIndex !== null && hoverIndex >= startIdx && hoverIndex < endIdx) {
+        // The dashed vertical line spans the whole stack (every pane); the
+        // horizontal line, price-label chip, and OHLC legend stay scoped
+        // to the main pane only — an indicator pane's own hover readout,
+        // if it wants one, is the job of whatever plugin draws into it.
+        // `formatLegendOverride`, when set, replaces the series's own
+        // formatLegend entirely for this chart instance rather than
+        // merging with it — see `WickChartOptions.formatLegend`.
+        const formatLegend = this.formatLegendOverride ?? seriesDefinition.formatLegend;
+        const legendContext: LegendFormatContext<TPoint> = { index: hoverIndex, allPoints: sorted };
+        const legendParts = formatLegend?.(sorted[hoverIndex]!, style, legendContext) ?? [];
+        crosshairRenderer.render({
+          x: xForIndex(hoverIndex),
+          timeSeconds: times[hoverIndex]!,
+          hoverY,
+          valueMin,
+          valueMax,
+          priceStep,
+          chartWidth,
+          chartHeight,
+          stackHeight,
+          invertValueAxis: this.invertValueAxis,
+          legendParts,
+          canvasWidth: canvas.width,
+        });
       }
     } finally {
       frameState.ended = true;

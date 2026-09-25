@@ -249,12 +249,18 @@ it per chart instance via `formatLegend`:
 const chart = createCandlestickChart(canvas, {
   formatLegend(candle, style, { index, allPoints }) {
     const prev = allPoints[index - 1];
-    const change = prev ? (((candle.close - prev.close) / prev.close) * 100).toFixed(2) : null;
+    const change = prev ? ((candle.close - prev.close) / prev.close) * 100 : null;
     return [
       `시가 ${candle.open.toLocaleString()}`,
       `고가 ${candle.high.toLocaleString()}`,
       `저가 ${candle.low.toLocaleString()}`,
-      `종가 ${candle.close.toLocaleString()}${change === null ? '' : ` (${change}%)`}`,
+      `종가 ${candle.close.toLocaleString()}`,
+      // A line can be a plain string (drawn in legend.textColor, like the
+      // four above) or { text, color } for one that needs its own color —
+      // see "Coloring individual legend lines" just below.
+      change === null
+        ? '등락 —'
+        : { text: `등락 ${change >= 0 ? '+' : ''}${change.toFixed(2)}%`, color: change >= 0 ? '#22c55e' : '#ef4444' },
     ];
   },
 });
@@ -265,6 +271,20 @@ merge with the built-in OHLC lines, so return every line you want shown. `allPoi
 point currently loaded (not just visible), the same array a `ChartPlugin` reads through
 `PluginRenderApi.allPoints`; `index` is `candle`'s position in it, so `allPoints[index - 1]` is
 the previous point regardless of where the user has panned/zoomed to.
+
+#### Coloring individual legend lines
+
+Every line returned by `formatLegend` is a `LegendLine` — either a plain `string`, drawn in
+`legend.textColor` like every line before this existed, or `{ text, color }` for one line that
+needs its own color independent of the rest (the `change` line above: green when positive, red
+when negative, regardless of `legend.textColor`). Mixing both shapes in one returned array, as
+above, is the normal case — only the lines that actually need a distinct color use the object
+form. There's no chart-wide "green means up" setting for this: which color means "up" is a
+convention that varies by market (green-up in most markets, red-up in South Korea and a few
+others) and isn't something the library should hardcode, so `formatLegend` decides it per line
+the same way it decides everything else about the legend's text. This is separate from
+`CandlestickStyle.upColor`/`downColor`, which is the *candle's own* body/wick color, a
+chart-wide setting rather than something recomputed per hovered point.
 
 `SeriesDefinition.formatLegend` (what candlestick/line ship with) is a shared default for every
 chart of that *type*; `WickChartOptions.formatLegend` is the per-*instance* override above it —

@@ -348,6 +348,29 @@ describe('ChartRenderer (candlestick)', () => {
       expect(ctx.fillStyle).toBe('#666666'); // the legend's fillStyle is the last one set
     });
 
+    it('colors an individual legend line via { text, color }, independent of legend.textColor', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries, {
+        legend: { textColor: '#666666' },
+        formatLegend: () => ['O 100', { text: '+5.2%', color: '#22c55e' }],
+      });
+      const fillStylesAtFillText: Array<string | CanvasGradient | CanvasPattern> = [];
+      ctx.fillText.mockImplementation(() => fillStylesAtFillText.push(ctx.fillStyle));
+
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        plugins: [],
+        panes: [],
+      });
+
+      // fillText is also called for axis/time-chip labels earlier in the frame —
+      // the legend's own two lines are the last two fillText calls.
+      expect(fillStylesAtFillText.slice(-2)).toEqual(['#666666', '#22c55e']);
+    });
+
     it('positions the OHLC tooltip near the hovered pixel, not a fixed corner', () => {
       const renderer = new ChartRenderer(canvas, candlestickSeries);
       const viewport = new Viewport(SAMPLE.length);
@@ -400,6 +423,31 @@ describe('ChartRenderer (candlestick)', () => {
       ];
       expect(tooltipBox[0]).toBeGreaterThanOrEqual(0);
       expect(tooltipBox[1]).toBeGreaterThanOrEqual(0);
+    });
+
+    it('draws the hover legend/crosshair after plugins, so a plugin (e.g. trade markers) never covers it', () => {
+      const renderer = new ChartRenderer(canvas, candlestickSeries);
+      renderer.render({
+        sorted: SAMPLE,
+        times: TIMES,
+        viewport: new Viewport(SAMPLE.length),
+        hoverIndex: 1,
+        hoverY: 100,
+        // A plugin that also paints a fillRect on the main pane (a trade
+        // marker, say) — the tooltip must still end up on top of it.
+        plugins: [{ draw: ({ ctx: pluginCtx }) => pluginCtx.fillRect(0, 0, 20, 20) }],
+        panes: [],
+      });
+
+      const tooltipBox = ctx.fillRect.mock.calls[ctx.fillRect.mock.calls.length - 1] as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      // the plugin's fillRect is a fixed 20x20 — the tooltip box is not, so this
+      // confirms the last fillRect call was the tooltip's, not the plugin's
+      expect(tooltipBox).not.toEqual([0, 0, 20, 20]);
     });
 
     it('uses a custom legend background and padding', () => {

@@ -17,6 +17,7 @@ import type { SeriesDefinition } from './series/types.js';
 import type {
   Candle,
   LegendFormatContext,
+  LegendLine,
   LinePoint,
   PaneOptions,
   ResolvedPaneOptions,
@@ -30,6 +31,7 @@ export type {
   BusinessDay,
   Candle,
   LegendFormatContext,
+  LegendLine,
   LinePoint,
   PaneOptions,
   WickChartOptions,
@@ -984,7 +986,7 @@ export function createCandlestickChart(
      * `context` narrowed to this series's own types instead of the general
      * (unchecked) `SeriesPoint`/`unknown` shape `WickChartOptions` itself
      * allows — see its doc comment for what this is for. */
-    formatLegend?(point: Candle, style: CandlestickStyle, context: LegendFormatContext<Candle>): string[];
+    formatLegend?(point: Candle, style: CandlestickStyle, context: LegendFormatContext<Candle>): LegendLine[];
   },
 ): WickChart<Candle> {
   return new WickChart<Candle>(canvas, { ...options, type: 'candlestick' });
@@ -1003,7 +1005,7 @@ export function createLineChart(
     style?: Partial<LineStyle>;
     /** Same override as `WickChartOptions.formatLegend`, narrowed to this
      * series's own types — see `createCandlestickChart`'s equivalent. */
-    formatLegend?(point: LinePoint, style: LineStyle, context: LegendFormatContext<LinePoint>): string[];
+    formatLegend?(point: LinePoint, style: LineStyle, context: LegendFormatContext<LinePoint>): LegendLine[];
   },
 ): WickChart<LinePoint> {
   return new WickChart<LinePoint>(canvas, { ...options, type: 'line' });

@@ -197,6 +197,16 @@ export interface LegendFormatContext<TPoint extends SeriesPoint = SeriesPoint> {
   allPoints: readonly TPoint[];
 }
 
+/**
+ * One line of the hover legend — a plain `string` (drawn in the legend's
+ * configured `textColor`, same as every version of this library before
+ * per-line color existed) or `{ text, color }` for a line that needs its
+ * own color independent of the rest — a percent-change line that should
+ * read green/red by sign, say. Mixing both in the same `formatLegend`
+ * return array is fine: each line is colored independently.
+ */
+export type LegendLine = string | { text: string; color?: string };
+
 export interface WickChartOptions {
   /**
    * Which registered series type to render this chart as (see
@@ -230,7 +240,9 @@ export interface WickChartOptions {
   /**
    * Overrides the active series's own `formatLegend` (see
    * `SeriesDefinition.formatLegend`) for this chart instance specifically —
-   * the hover legend's text, one string per line. `SeriesDefinition.formatLegend`
+   * the hover legend's text, one `LegendLine` per line (a plain string, or
+   * `{ text, color }` for a line that needs its own color — see
+   * `LegendLine`). `SeriesDefinition.formatLegend`
    * is a shared default for every chart of that series *type* (registered
    * once via `registerSeries`); this is a per-*instance* override for
    * whatever varies by app/session instead of by chart type — localized
@@ -250,7 +262,7 @@ export interface WickChartOptions {
    * both to the concrete series's own types, the same way they narrow
    * `style` — see their own doc comments.
    */
-  formatLegend?(point: SeriesPoint, style: unknown, context: LegendFormatContext<SeriesPoint>): string[];
+  formatLegend?(point: SeriesPoint, style: unknown, context: LegendFormatContext<SeriesPoint>): LegendLine[];
   /**
    * Mirrors the value axis top-to-bottom — every pane's higher values
    * render lower on screen instead of higher, with no change to the

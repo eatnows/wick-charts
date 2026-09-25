@@ -1,5 +1,5 @@
 import type { Scale } from '../hybridScale.js';
-import type { LegendFormatContext, SeriesPoint, ValueRange } from '../types.js';
+import type { LegendFormatContext, LegendLine, SeriesPoint, ValueRange } from '../types.js';
 
 export type { ValueRange } from '../types.js';
 
@@ -71,5 +71,5 @@ export interface SeriesDefinition<TPoint extends SeriesPoint, TStyle> {
    * previous point — this built-in series doesn't need it, but a custom
    * one can. `WickChartOptions.formatLegend`, when set, overrides this per
    * chart instance rather than per series type — see its own doc comment. */
-  formatLegend?(point: TPoint, style: TStyle, context: LegendFormatContext<TPoint>): string[];
+  formatLegend?(point: TPoint, style: TStyle, context: LegendFormatContext<TPoint>): LegendLine[];
 }

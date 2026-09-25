@@ -1,7 +1,7 @@
 import { formatHoverTime } from './axis.js';
 import { formatPrice } from './priceAxis.js';
 import { pixelToValue } from './valueAxis.js';
-import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions } from './types.js';
+import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions, LegendLine } from './types.js';
 
 /** Everything one frame's hover crosshair/legend needs — computed by
  * `ChartRenderer.render()` (which owns the hovered point, the active
@@ -23,7 +23,7 @@ export interface CrosshairRenderInput {
    * across every indicator pane below it. */
   stackHeight: number;
   invertValueAxis: boolean;
-  legendParts: string[];
+  legendParts: LegendLine[];
   /** The canvas's own backing-store width — needed only to clamp the
    * time-axis label chip so it never runs off the right edge. */
   canvasWidth: number;
@@ -119,7 +119,7 @@ export class CrosshairRenderer {
    * with no primary value still gets a legend, just pinned near the top
    * at the hovered column). */
   private renderHoverTooltip(
-    lines: string[],
+    lines: LegendLine[],
     x: number,
     hoverY: number | null,
     chartWidth: number,
@@ -130,8 +130,12 @@ export class CrosshairRenderer {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
+    // Each line is either a plain string or { text, color } — normalize to
+    // its text once up front for sizing, and read its own color (falling
+    // back to legend.textColor) only when actually drawing it below.
+    const texts = lines.map((line) => (typeof line === 'string' ? line : line.text));
     const lineHeight = font.legendSize + 4;
-    const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const textWidth = Math.max(...texts.map((text) => ctx.measureText(text).width));
     const boxWidth = textWidth + legend.paddingX * 2;
     const boxHeight = lines.length * lineHeight + legend.paddingY * 2;
 
@@ -145,9 +149,9 @@ export class CrosshairRenderer {
     ctx.fillStyle = legend.background;
     ctx.fillRect(left, top, boxWidth, boxHeight);
 
-    ctx.fillStyle = legend.textColor;
     lines.forEach((line, i) => {
-      ctx.fillText(line, left + legend.paddingX, top + legend.paddingY + i * lineHeight);
+      ctx.fillStyle = typeof line === 'string' ? legend.textColor : (line.color ?? legend.textColor);
+      ctx.fillText(texts[i]!, left + legend.paddingX, top + legend.paddingY + i * lineHeight);
     });
   }
 
