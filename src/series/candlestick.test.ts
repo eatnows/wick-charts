@@ -131,6 +131,16 @@ describe('candlestickSeries', () => {
       expect(barHeight).toBeCloseTo(50);
       expect(observedAlpha).toBe(0.25);
     });
+
+    it('draws no volume bars at all when volumeAreaHeightRatio is 0, even for candles with volume', () => {
+      const ctx = createFakeContext();
+      const visible = [candle(1, 100, 110, 95, 105, 50), candle(2, 105, 115, 100, 110, 100)];
+      const style = { ...candlestickSeries.defaultStyle, volumeAreaHeightRatio: 0 };
+      candlestickSeries.draw(drawContext(visible, ctx), style);
+
+      // zero volume bars (the Math.max(1, ...) floor used to draw a 1px sliver even here) + 2 bodies
+      expect(ctx.fillRect.mock.calls.length).toBe(visible.length);
+    });
   });
 
   describe('customizable style: bodyWidthRatio', () => {

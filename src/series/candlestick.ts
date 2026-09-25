@@ -14,7 +14,12 @@ export interface CandlestickStyle {
   /** Fraction of the chart's full height that volume bars occupy, measured
    * up from the bottom. Candles still use the full height for their own
    * price scale regardless of this value — the bars sit in this bottom
-   * margin, layered underneath. Defaults to 0.2. */
+   * margin, layered underneath (and can visually collide with a candle
+   * whose range dips into that margin). Defaults to 0.2. Set to 0 to
+   * suppress this in-pane backdrop entirely — do this when drawing volume
+   * in its own pane instead via `WickChart.addPane` + a `ChartPlugin`
+   * reading `Candle.volume` off `allPoints` (see "Splitting volume into
+   * its own pane" in the README), so the two don't double-draw. */
   volumeAreaHeightRatio: number;
   /** Opacity (0-1) of the volume bars, so they read as a backdrop rather
    * than competing with the candles drawn over them. Defaults to 0.5. */
@@ -41,6 +46,13 @@ function getValueRange(visible: Candle[], scaleFactor: number): ValueRange {
  * OHLC-only data look exactly as they did before this existed. */
 function drawVolumeBars(context: SeriesDrawContext<Candle>, style: CandlestickStyle): void {
   const { ctx, visible, startIndex, xForIndex, slotWidth, chartHeight } = context;
+
+  // A caller drawing volume in its own pane via WickChart.addPane (see
+  // "Splitting volume into its own pane" in the README) sets this to 0 to
+  // fully suppress this in-pane backdrop — without this guard, the
+  // Math.max(1, ...) floor below still drew a 1px sliver per candle even
+  // at ratio 0.
+  if (style.volumeAreaHeightRatio <= 0) return;
 
   const maxVolume = visible.reduce((max, c) => (c.volume !== undefined ? Math.max(max, c.volume) : max), 0);
   if (maxVolume <= 0) return;

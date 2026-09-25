@@ -592,6 +592,62 @@ the price pane — an indicator pane's own hover readout, if you want one, is so
 plugin draws (it has the same `xForIndex`/`yForValue` a price-pane plugin does, just mapped
 against that pane's own value domain and pixel rect).
 
+### Splitting volume into its own pane
+
+The candlestick series' default volume bars are a translucent backdrop *inside* the price
+pane (`CandlestickStyle.volumeAreaHeightRatio`, `0.2` of the chart height by default) — fine
+for a compact chart, but on a tall one, or whenever a candle's own range dips into that bottom
+margin, the bars visually collide with the candles drawn over them. The same `addPane` +
+`ChartPlugin.paneId` mechanism the previous section uses for RSI/MACD works just as well for
+volume — it just reads `Candle.volume` instead of computing an indicator:
+
+```ts
+// PaneOptions.getValueRange takes no arguments, so — same as the MACD pane above needing its
+// own auto-fit range — it closes over the chart's current data itself rather than reading it
+// from an argument. `allData` is whatever you last passed to `chart.setData()`.
+let allData: Candle[] = [];
+
+const chart = createCandlestickChart(canvas, {
+  style: { volumeAreaHeightRatio: 0 }, // suppress the in-pane backdrop — see below for why
+});
+
+chart.addPane({
+  id: 'volume',
+  heightRatio: 0.15,
+  getValueRange: () => {
+    const { startIndex, endIndex } = chart.getVisibleRange();
+    let max = 0;
+    for (let i = startIndex; i < endIndex; i++) max = Math.max(max, allData[i]?.volume ?? 0);
+    return { min: 0, max: max || 1 };
+  },
+});
+
+chart.addPlugin({
+  paneId: 'volume',
+  draw({ ctx, allPoints, visibleStartIndex, visibleEndIndex, xForIndex, yForValue }) {
+    const zeroY = yForValue(0);
+    const barWidth = (xForIndex(visibleStartIndex + 1) - xForIndex(visibleStartIndex)) * 0.6;
+    for (let i = visibleStartIndex; i < visibleEndIndex; i++) {
+      const c = allPoints[i];
+      if (c.volume === undefined) continue;
+      ctx.fillStyle = c.close >= c.open ? '#26a69a' : '#ef5350';
+      const y = yForValue(c.volume);
+      ctx.fillRect(xForIndex(i) - barWidth / 2, y, barWidth, zeroY - y);
+    }
+  },
+});
+
+chart.setData(candles);
+allData = candles; // keep in sync on every later setData() call too
+```
+
+Setting `volumeAreaHeightRatio: 0` on the style matters — leaving the default `0.2` active
+alongside a dedicated volume pane double-draws the bars (once as the in-pane backdrop, once in
+the new pane). Unlike an indicator pane's `getValueRange`, volume's domain is naturally
+`[0, max]` rather than something auto-fit around a signed value the way MACD's is — the
+example above recomputes `max` from the currently visible candles each frame, the same way
+`computeMacdValueRange` does in the "Multi-pane indicators" example above.
+
 ### Cleanup
 
 Call `chart.destroy()` when you're done with a chart (component unmount, etc.) — it removes a
