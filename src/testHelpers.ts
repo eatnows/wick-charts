@@ -9,6 +9,7 @@ export interface FakeContext2D {
   fillRect: ReturnType<typeof vi.fn>;
   beginPath: ReturnType<typeof vi.fn>;
   closePath: ReturnType<typeof vi.fn>;
+  arc: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
   stroke: ReturnType<typeof vi.fn>;
@@ -33,6 +34,7 @@ export function createFakeContext(): FakeContext2D {
     fillRect: vi.fn(),
     beginPath: vi.fn(),
     closePath: vi.fn(),
+    arc: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     stroke: vi.fn(),
