@@ -18,6 +18,7 @@ npm install wick-charts
   - [Quick start](#quick-start)
   - [Candle data](#candle-data)
   - [Line charts](#line-charts)
+  - [Donut, pie and gauge charts](#donut-pie-and-gauge-charts)
   - [Styling](#styling)
   - [Customizing the hover legend text](#customizing-the-hover-legend-text)
   - [High-DPI displays (devicePixelRatio)](#high-dpi-displays-devicepixelratio)
@@ -173,6 +174,73 @@ throwing — useful for a series with missing data at some points without pre-fi
 yourself. The hover legend shows `Value <number>` (or `Value —` for a hovered gap) in place of
 candlestick's OHLC breakdown; `new WickChart(canvas, { type: 'line' })` also works, the same
 untyped escape hatch `type: 'candlestick'` has, if you'd rather not import the factory.
+
+### Donut, pie and gauge charts
+
+`createDonutChart` draws proportional data — holdings by weight, a metric against a target — on
+its own canvas. It isn't a series type (those assume a time axis and pan/zoom), so it has its
+own small API in the same shape as the others: construct with a canvas, `setData`, `render()`,
+`destroy()`.
+
+```ts
+import { createDonutChart } from 'wick-charts';
+
+const chart = createDonutChart(canvas, {
+  hover: { grow: 4, dim: 0.4 },          // opt-in; omit (or `false`) for no hover emphasis
+  formatValue: (v) => `$${v.toLocaleString('en-US')}`,
+  onSelect: ({ arc }) => console.log(arc?.key ?? 'cleared'),
+});
+
+chart.setData([
+  { key: 'aapl', label: 'Apple', value: 42300 },
+  { key: 'msft', label: 'Microsoft', value: 31800, color: '#f28e2b' }, // `color` is optional
+  { key: 'cash', label: 'Cash', value: 0 },                           // zero/negative/NaN are skipped
+]);
+chart.render();
+```
+
+Like the other charts it doesn't watch the canvas's size: set `canvas.width`/`height` (see
+[High-DPI displays](#high-dpi-displays-devicepixelratio)), then call `render()`.
+
+**Shape.** `innerRadius` is the hole as a fraction of the outer radius (default `0.7`; `0` is a
+full pie). Angles are degrees clockwise from 12 o'clock: `startAngle` is where the first slice
+starts and `sweep` (default `360`) is how far the slices span, so `{ startAngle: -90, sweep: 180 }`
+is an upper half-ring gauge. Slices always fill the sweep — to leave a gauge's remainder empty,
+add a slice with `color: 'transparent'` for it (see `demo/donut.html`). `gap` is the seam
+between slices in CSS px (a constant angle, so slightly wider at the outer edge) and is skipped
+for a lone slice. The ring is centered in the canvas, so a half-ring gauge leaves the lower half
+of the canvas empty.
+
+**Hover, selection, tooltip.** With `hover` enabled the slice under the pointer grows and the
+others dim; clicking (or tapping) selects a slice, drawn with an outline (`selected`), and clicking
+it again or empty space clears it. The tooltip — label, value, and percent — uses the same box
+and `legend` styling as the crosshair legend; override its text with
+`formatLegend(arc, { index, arcs, formatValue, formatPercent })` (return `[]` for none) and the
+number formats with `formatValue`/`formatPercent`. On touch there is no hover, so a tap selects and
+pins the tooltip. The tooltip is drawn inside the canvas and clips at its edge. The canvas doesn't
+set `touch-action`, so the page still scrolls under a finger.
+
+**Your own legend and center content.** The chart draws no always-on legend or center text; it
+gives you what you need to build them:
+
+- `chart.getArcs()` returns each slice's `label`, `value`, `fraction` (`0..1`, unrounded — the
+  printed percentages needn't add to exactly 100) and resolved `color`.
+- `chart.setHighlight(key | null)` / `chart.setSelected(key | null)` drive the same emphasis from
+  outside, e.g. a row in your legend. They never fire `onHover`/`onSelect`, so wiring a callback
+  back into them can't loop.
+- `chart.getCenter()` returns `{ x, y, innerRadius }` in CSS px relative to the canvas — position
+  a DOM overlay against it. To draw into the hole on the canvas instead, pass `centerRenderer(ctx,
+  geometry)` (backing-store pixels; multiply CSS-px sizes by `geometry.devicePixelRatio`).
+
+**Accessibility.** The canvas gets `role="img"` and an `aria-label` listing every slice's percent
+(`"Apple 41.3%, Microsoft 31.0%"`), refreshed by `setData`/`setOptions`. The tooltip, selection,
+and hover are pointer-only — expose the same information in your own markup (from `getArcs()`)
+if keyboard or screen-reader users need it. Pass `a11y: false` to stop the chart from touching
+the canvas's attributes. Keyboard navigation is not built in yet.
+
+`setOptions(partial)` shallow-merges: a nested object such as `hover` or `legend` is replaced as a
+whole. `DEFAULT_PALETTE` is the color list used for slices without a `color`; pass `palette` to
+change it.
 
 ### Styling
 
@@ -725,8 +793,10 @@ for *this* series (a line series wouldn't have a body width or volume bars to co
 
 ### Series types
 
-Candlestick and line are the two chart types today, and nothing above `src/series/` treats
-either specially. `WickChart` and `ChartRenderer` are generic over a point shape
+Candlestick and line are the two time-series chart types today, and nothing above `src/series/`
+treats either specially. (The donut chart isn't one: it has no time axis, so it lives in
+`src/donut/` outside this registry — pure layout in `layout.ts`, drawing in `draw.ts`, state and
+pointer handling in `index.ts`.) `WickChart` and `ChartRenderer` are generic over a point shape
 (`SeriesPoint` — just a `time`) and delegate every type-specific decision — how to compute
 the value-axis range, how to draw the visible points, what a hover legend says — to a
 `SeriesDefinition` (see `src/series/types.ts`) resolved at construction time from

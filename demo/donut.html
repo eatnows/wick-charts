@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>wick-charts donut demo</title>
+<style>
+  html,body{margin:0;background:#0d1117;color:#c9d1d9;font-family:-apple-system,sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid #21262d}
+  header h1{font-size:14px;margin:0 0 4px;font-weight:600}
+  header p{font-size:12px;margin:0;color:#8b949e}
+  main{display:flex;flex-wrap:wrap;gap:28px;padding:24px 18px}
+  section{width:280px}
+  h2{font-size:12px;margin:0 0 10px;color:#8b949e;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+  .holder{position:relative;width:240px;height:240px;margin-bottom:12px}
+  canvas{width:100%;height:100%;display:block}
+  /* DOM overlay placed from chart.getCenter() — pointer-events off so hover/click reach the canvas */
+  .center{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;pointer-events:none;transform:translate(-50%,-50%)}
+  .center b{font-size:20px}.center span{font-size:11px;color:#8b949e}
+  ul{list-style:none;margin:0;padding:0;font-size:12.5px}
+  li{display:flex;align-items:center;gap:8px;padding:3px 4px;border-radius:4px;cursor:default}
+  li.active{background:#161b22}
+  li i{width:10px;height:10px;border-radius:2px;flex:none}
+  li span{flex:1}li em{font-style:normal;color:#8b949e;font-variant-numeric:tabular-nums}
+  .hint{font-size:11.5px;color:#8b949e;margin:6px 0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>wick-charts — donut</h1>
+  <p>createDonutChart: hover emphasis (opt-in), click/tap selection, tooltip, DOM legend and center via getArcs()/getCenter()</p>
+</header>
+<main>
+  <section>
+    <h2>Donut + legend + center slot</h2>
+    <div class="holder" id="holder-a">
+      <canvas id="a"></canvas>
+      <div class="center" id="center-a"><b></b><span>holdings</span></div>
+    </div>
+    <ul id="legend-a"></ul>
+    <p class="hint">Hover a slice or a legend row; click to select. A zero-value row (Cash) is skipped.</p>
+  </section>
+  <section>
+    <h2>Pie (innerRadius: 0)</h2>
+    <div class="holder"><canvas id="b"></canvas></div>
+    <p class="hint">Same chart, no hole; custom tooltip via formatLegend.</p>
+  </section>
+  <section>
+    <h2>Gauge (sweep: 180)</h2>
+    <div class="holder"><canvas id="c"></canvas></div>
+    <p class="hint">startAngle: -90, sweep: 180; the remainder is a transparent slice over the track; text drawn by centerRenderer.</p>
+  </section>
+</main>
+
+<script type="module">
+  import { createDonutChart } from '../dist/index.js';
+
+  // The chart doesn't watch size: set the backing store, then render().
+  function fit(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+  }
+
+  const holdings = [
+    { key: 'aapl', label: 'Apple', value: 42300 },
+    { key: 'msft', label: 'Microsoft', value: 31800 },
+    { key: 'nvda', label: 'NVIDIA', value: 18950 },
+    { key: 'tsla', label: 'Tesla', value: 9400 },
+    { key: 'cash', label: 'Cash', value: 0 },
+  ];
+  const usd = (v) => '$' + v.toLocaleString('en-US');
+
+  // --- A: donut + DOM legend + DOM center ---
+  const canvasA = document.getElementById('a');
+  const legendA = document.getElementById('legend-a');
+  const centerA = document.getElementById('center-a');
+  fit(canvasA);
+
+  const donut = createDonutChart(canvasA, {
+    hover: { grow: 4, dim: 0.4 },
+    formatValue: usd,
+    onHover: ({ arc }) => paintLegend(arc?.key ?? null),
+    onSelect: ({ arc }) => paintLegend(donut.getHighlight(), arc?.key ?? null),
+  }).setData(holdings);
+
+  function paintLegend(highlightKey = null, selectedKey = donut.getSelected()) {
+    legendA.innerHTML = '';
+    for (const arc of donut.getArcs()) {
+      const li = document.createElement('li');
+      li.className = arc.key === highlightKey || arc.key === selectedKey ? 'active' : '';
+      li.innerHTML = `<i style="background:${arc.color}"></i><span>${arc.segment.label}</span><em>${(arc.fraction * 100).toFixed(1)}%</em>`;
+      // legend -> chart: setHighlight never fires onHover, so no feedback loop
+      li.onmouseenter = () => { donut.setHighlight(arc.key); li.classList.add('active'); };
+      li.onmouseleave = () => { donut.setHighlight(null); li.classList.remove('active'); };
+      legendA.appendChild(li);
+    }
+  }
+  function placeCenter() {
+    const c = donut.getCenter(); // CSS px, relative to the canvas
+    centerA.style.left = c.x + 'px';
+    centerA.style.top = c.y + 'px';
+    centerA.firstElementChild.textContent = String(donut.getArcs().length);
+  }
+  paintLegend();
+  placeCenter();
+  donut.render();
+
+  // --- B: pie with a custom tooltip ---
+  const canvasB = document.getElementById('b');
+  fit(canvasB);
+  createDonutChart(canvasB, {
+    innerRadius: 0,
+    gap: 1,
+    hover: { grow: 6, dim: 0.5 },
+    formatLegend: (arc, ctx) => [
+      [{ text: arc.segment.label, color: arc.color }],
+      `${ctx.formatPercent(arc.fraction)} of ${ctx.arcs.length} holdings`,
+    ],
+  }).setData(holdings).render();
+
+  // --- C: half-ring gauge ---
+  // Slices always fill the sweep, so a gauge's "remainder" is just another
+  // slice — here a transparent one, with the tooltip suppressed.
+  const canvasC = document.getElementById('c');
+  fit(canvasC);
+  createDonutChart(canvasC, {
+    startAngle: -90,
+    sweep: 180,
+    innerRadius: 0.75,
+    gap: 0,
+    formatLegend: () => [],
+    centerRenderer(ctx, g) {
+      ctx.fillStyle = '#c9d1d9';
+      ctx.font = `600 ${22 * g.devicePixelRatio}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('72%', g.cx, g.cy);
+    },
+  }).setData([
+    { key: 'used', label: 'Used', value: 72, color: '#3fb950' },
+    { key: 'rest', label: 'Remaining', value: 28, color: 'transparent' },
+  ]).render();
+</script>
+</body>
+</html>
