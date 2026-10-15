@@ -59,6 +59,18 @@ export type { LineStyle } from './series/line.js';
 // usable with no other change to this file.
 export { candlestickSeries } from './series/candlestick.js';
 export { lineSeries } from './series/line.js';
+export { drawLegendBox } from './legendBox.js';
+export { DEFAULT_PALETTE, DonutChart, createDonutChart } from './donut/index.js';
+export type {
+  DonutArc,
+  DonutEvent,
+  DonutGeometry,
+  DonutHoverOptions,
+  DonutLegendContext,
+  DonutOptions,
+  DonutSegment,
+  DonutSelectedOptions,
+} from './donut/index.js';
 export { LinearScale } from './scale.js';
 export { toUnixSeconds } from './time.js';
 export { Viewport } from './viewport.js';
