@@ -1,16 +1,8 @@
 import { formatHoverTime } from './axis.js';
+import { drawLegendBox } from './legendBox.js';
 import { formatPrice } from './priceAxis.js';
 import { pixelToValue } from './valueAxis.js';
-import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions, LegendLine, LegendSegment } from './types.js';
-
-/** Normalizes any `LegendLine` shape to the one form actually drawn:
- * a list of colored segments (a plain string/line becomes one segment
- * with no color override). */
-function toSegments(line: LegendLine): LegendSegment[] {
-  if (typeof line === 'string') return [{ text: line }];
-  if (Array.isArray(line)) return line;
-  return [line];
-}
+import type { ChartCrosshairOptions, ChartFontOptions, ChartLegendOptions, LegendLine } from './types.js';
 
 /** Everything one frame's hover crosshair/legend needs — computed by
  * `ChartRenderer.render()` (which owns the hovered point, the active
@@ -56,10 +48,6 @@ export class CrosshairRenderer {
 
   private axisFont(): string {
     return `${this.font.axisSize}px ${this.font.family}`;
-  }
-
-  private legendFont(): string {
-    return `${this.font.legendSize}px ${this.font.family}`;
   }
 
   render(input: CrosshairRenderInput): void {
@@ -122,12 +110,9 @@ export class CrosshairRenderer {
   }
 
   /** The OHLC(+volume) tooltip — floats near the hovered pixel like a
-   * speech bubble, one line per part, rather than a fixed banner glued to
-   * a corner of the canvas. Offset up-and-right of the cursor/finger by
-   * `legend.cursorGap` and clamped to both chart edges so it never runs
-   * off-screen, including when there's no `hoverY` to anchor to (a series
-   * with no primary value still gets a legend, just pinned near the top
-   * at the hovered column). */
+   * speech bubble, laid out and clamped by the shared `drawLegendBox`. With
+   * no `hoverY` to anchor to (a series with no primary value still gets a
+   * legend) it is pinned near the top at the hovered column. */
   private renderHoverTooltip(
     lines: LegendLine[],
     x: number,
@@ -135,41 +120,7 @@ export class CrosshairRenderer {
     chartWidth: number,
     chartHeight: number,
   ): void {
-    const { ctx, font, legend } = this;
-    ctx.font = this.legendFont();
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    // Normalize every line to its segments once up front — sizing needs
-    // each line's full concatenated width; drawing needs each segment's
-    // own color (falling back to legend.textColor).
-    const segmentedLines = lines.map(toSegments);
-    const lineHeight = font.legendSize + 4;
-    const textWidth = Math.max(
-      ...segmentedLines.map((segments) => segments.reduce((w, seg) => w + ctx.measureText(seg.text).width, 0)),
-    );
-    const boxWidth = textWidth + legend.paddingX * 2;
-    const boxHeight = lines.length * lineHeight + legend.paddingY * 2;
-
-    const anchorY = hoverY ?? 0;
-    const left = Math.min(Math.max(x + legend.cursorGap, 0), Math.max(0, chartWidth - boxWidth));
-    const top = Math.min(
-      Math.max(anchorY - boxHeight - legend.cursorGap, 0),
-      Math.max(0, chartHeight - boxHeight),
-    );
-
-    ctx.fillStyle = legend.background;
-    ctx.fillRect(left, top, boxWidth, boxHeight);
-
-    segmentedLines.forEach((segments, i) => {
-      let segX = left + legend.paddingX;
-      const y = top + legend.paddingY + i * lineHeight;
-      for (const seg of segments) {
-        ctx.fillStyle = seg.color ?? legend.textColor;
-        ctx.fillText(seg.text, segX, y);
-        segX += ctx.measureText(seg.text).width;
-      }
-    });
+    drawLegendBox(this.ctx, lines, { x, y: hoverY ?? 0 }, { width: chartWidth, height: chartHeight }, this.legend, this.font);
   }
 
   /** The highlighted price-axis label that follows the crosshair's
