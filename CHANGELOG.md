@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`createDonutChart`** — a donut/pie/half-ring-gauge chart on its own canvas
+  (not a time-series type, so it sits outside the series registry). Options:
+  `innerRadius` (ratio; `0` = pie), `startAngle`/`sweep` (degrees), `gap`,
+  `palette`, opt-in `hover` emphasis (grow + dim), always-available selection,
+  and a hover tooltip (label, value, percent) styled by the same `legend`
+  options as the crosshair legend, with `formatLegend`/`formatValue`/
+  `formatPercent` hooks. `getArcs()`, `getCenter()`, `centerRenderer`, and
+  `setHighlight`/`setSelected` (which never fire callbacks) let an app build
+  its own legend and center content. The canvas gets `role="img"` and an
+  `aria-label` listing every percent (`a11y: false` to opt out). See "Donut,
+  pie and gauge charts" in the README and `demo/donut.html`.
+- **`drawLegendBox`** is exported — the hover legend box layout/clamping the
+  crosshair uses, for custom charts that want the same tooltip.
+
+### Changed
+
+- The crosshair's tooltip drawing moved out of `CrosshairRenderer` into
+  `drawLegendBox` (`src/legendBox.ts`). No behavior change.
+
 ## [0.11.0] — 2026-09-26
 
 ### Added
